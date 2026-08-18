@@ -96,6 +96,13 @@ resource "google_kms_crypto_key" "crypto_key" {
     # with this key becomes permanently unrecoverable. Run
     # `terraform state rm` deliberately (never `terraform destroy`) if a
     # key genuinely needs to go away.
+    #
+    # Was briefly set to false on 2026-08-18 for a full, explicitly-
+    # requested teardown of the dev environment (see
+    # docs/troubleshooting.md) — restored immediately afterward. GCP has
+    # no API to hard-delete a KMS key or keyring regardless; that teardown
+    # only removed them from Terraform state, it did not and could not
+    # delete the real keyring/keys.
     prevent_destroy = true
 
   }

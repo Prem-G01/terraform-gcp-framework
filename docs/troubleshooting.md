@@ -2,11 +2,17 @@
 
 ## What this rebuild did and did not do
 
-`bootstrap/` and `environments/dev` have both been applied for real against
-`prj-dg-devops-test`, each with the user's explicit confirmation — see
-"Bootstrap is now live" and "Dev was applied, then torn down" below.
-`sit`/`uat`/`prod` and CI/CD triggers are still code-only. Read this before
-calling anything here "production ready."
+`bootstrap/` and `environments/dev` were both applied for real against
+`prj-dg-devops-test`, then both fully destroyed again — all with the
+user's explicit confirmation at each step. See "Bootstrap is now live",
+"Dev was applied, then torn down", and "Full teardown (bootstrap + the
+last of dev), 2026-08-18" below for the complete sequence. As of the last
+section, **prj-dg-devops-test has nothing left that this repo created** —
+every real-infrastructure section below describes history, not current
+state. `sit`/`uat`/`prod` and CI/CD triggers were never applied. Read this
+before calling anything here "production ready," and read the final
+section before assuming any of the earlier "is now live" sections still
+describes reality.
 
 **Decided at the start:**
 1. The previous local `terraform.tfstate` (which referenced a different
@@ -189,6 +195,65 @@ everywhere).
 - `sit`, `uat`, and `prod` `deployment.yaml` are templates (apis + vpc
   only) — no real workload configuration existed for them in the original
   repository, so none was fabricated here.
+
+## Full teardown (bootstrap + the last of dev), 2026-08-18
+
+At explicit user request ("delete everything, it was all for testing —
+including bootstrap"), the rest of `dev` and all of `bootstrap` were
+destroyed. Two more real incidents, and the final honest state:
+
+**The dev-vpc / Private Service Access connection took over an hour to
+release.** `google_service_networking_connection.private_connection`
+refused to delete with `Producer services ... are still using this
+connection` across roughly six retries spanning well over an hour, even
+though `gcloud sql instances list` and `gcloud redis instances list`
+confirmed nothing was actually attached. Direct `gcloud services
+vpc-peerings delete` hit the identical error with a specific reason code
+(`FLOW_SN_DC_RESOURCE_PREVENTING_DELETE_CONNECTION`) that this session
+couldn't resolve further. This blocked `dev-vpc` (a VPC can't be deleted
+with an active peering) and transitively blocked the 24 `apis` entries (a
+reverse dependency of `vpc`). Everything else in `dev` — Pub/Sub, and
+after temporarily disabling KMS's `prevent_destroy` (see below) the KMS
+keyring and its 4 keys — was destroyed successfully before this session's
+Terraform tracking of `dev` was intentionally given up (see the state
+bucket deletion below). **If `prj-dg-devops-test` still has a `dev-vpc`
+network and a `psa-dev`-named Private Service Access peering/reserved
+range, that's this leftover** — clean it up manually
+(`gcloud compute networks delete dev-vpc`, and the associated peering)
+once GCP's backend has actually released the connection; there's no
+Terraform state left to do it through anymore.
+
+**KMS's `prevent_destroy` was temporarily set to `false`.** GCP has no API
+to hard-delete a KMS key or keyring at all — "destroying" a
+`google_kms_crypto_key`/`google_kms_key_ring` resource only removes it
+from Terraform state, it never calls a real delete. `prevent_destroy` was
+flipped back to `true` in `modules/security/kms/main.tf` immediately after
+this teardown; it should never normally be `false`.
+
+**The state bucket's `force_destroy` didn't actually work.** Even with
+`force_destroy = true` set in `bootstrap/main.tf` and re-applied,
+`terraform destroy` failed twice with `Error trying to delete bucket ...
+without force_destroy set to true` — despite the config already saying
+so. The bucket had accumulated dozens of noncurrent object versions
+(`default.tfstate#<generation>`, `default.tflock#<generation>`) from every
+render/plan/apply cycle across this whole session, and the provider's
+`force_destroy` object-emptying logic didn't reliably clear all of them.
+Worked around by emptying and deleting the bucket directly —
+`gcloud storage rm --recursive gs://prj-dg-devops-test-tfstate/**` then
+`gcloud storage buckets delete gs://prj-dg-devops-test-tfstate` — which
+succeeded immediately. `force_destroy` was restored to `false` in
+`bootstrap/main.tf` afterward (it should never normally be `true` — this
+was flagged to and confirmed by the user before doing it, given it meant
+giving up Terraform's tracking of the still-real `dev-vpc`/peering
+resources above). The artifact bucket (no versioning, no accumulated
+history) destroyed cleanly via plain `terraform destroy` with no
+workaround needed.
+
+**Final state**: `bootstrap`'s Terraform state has 0 resources. Every
+service account, IAM binding, and both buckets it created are gone. The
+one thing this repo cannot claim is fully cleaned up is the `dev-vpc`
+network and its Private Service Access peering — real, but no longer
+tracked by any Terraform state in this repository.
 
 ## Common issues
 

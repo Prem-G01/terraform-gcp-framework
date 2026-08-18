@@ -1,0 +1,62 @@
+{
+  "apiVersion": "platform.gcp/v1",
+  "kind": "Deployment",
+  "metadata": { "name": "test", "environment": "dev", "owner": "devops" },
+  "project": { "id": "prj-dg-devops-test" },
+  "region": { "primary": "asia-south1" },
+  "resources": {
+    "vpc": {
+      "enabled": true,
+      "instances": {
+        "dev-vpc": { "auto_create_subnetworks": false, "routing_mode": "REGIONAL" }
+      }
+    },
+    "subnet": {
+      "enabled": true,
+      "instances": {
+        "app-subnet": { "vpc": "dev-vpc", "cidr": "10.10.1.0/24", "region": "asia-south1", "flow_logs": { "enabled": false } }
+      }
+    },
+    "service_accounts": {
+      "enabled": true,
+      "instances": {
+        "vm-sa": {
+          "account_id": "vm-service-account",
+          "display_name": "VM Service Account",
+          "description": "Service Account for Compute Engine",
+          "roles": []
+        }
+      }
+    },
+    "vm": {
+      "enabled": true,
+      "instances": {
+        "app-vm-01": {
+          "zone": "asia-south1-a",
+          "machine_type": "e2-medium",
+          "subnet": "app-subnet",
+          "service_account": { "name": "vm-sa", "scopes": ["cloud-platform"] },
+          "boot_disk": {
+            "image": "projects/debian-cloud/global/images/family/debian-12",
+            "size_gb": 50,
+            "type": "pd-balanced"
+          },
+          "network": { "public_ip": false },
+          "shielded_vm": { "secure_boot": true, "vtpm": true, "integrity_monitoring": true },
+          "metadata": { "enable-oslogin": "TRUE" },
+          "tags": ["vm"],
+          "labels": {}
+        }
+      }
+    },
+    "iap": {
+      "enabled": true,
+      "instances": {
+        "admin-access": {
+          "target_vm": "app-vm-01",
+          "members": ["group:platform-admins@example.com"]
+        }
+      }
+    }
+  }
+}

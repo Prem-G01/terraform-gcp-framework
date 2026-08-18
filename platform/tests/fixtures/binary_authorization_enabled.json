@@ -1,0 +1,17 @@
+{
+  "apiVersion": "platform.gcp/v1",
+  "kind": "Deployment",
+  "metadata": { "name": "test", "environment": "dev", "owner": "devops" },
+  "project": { "id": "prj-dg-devops-test" },
+  "region": { "primary": "asia-south1" },
+  "resources": {
+    "binary_authorization": {
+      "enabled": true,
+      "instances": {},
+      "evaluation_mode": "ALWAYS_DENY",
+      "require_attestations_by": [],
+      "enforcement_mode": "ENFORCED_BLOCK_AND_AUDIT_LOG",
+      "global_policy_evaluation_mode": "ENABLE"
+    }
+  }
+}

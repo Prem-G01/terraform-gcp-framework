@@ -3,16 +3,18 @@
 ## What's actually run (and passing, as of this rebuild)
 
 ```bash
-pytest tests/ -v                                    # 25 passed
+pytest tests/ -v                                    # 35 passed
 pytest functions/process-upload/test_main.py -v     # 3 passed, no GCP call
 terraform fmt -check -recursive .                    # clean
 python -m engine.cli validate-all config             # dev/sit/uat/prod all PASS
 python -m engine.cli hardcode-scan .                 # 0 findings
+python -m engine.cli secret-scan .                   # 0 findings
 python -m engine.cli build-function-source config/environments/dev --dry-run
 cd environments/dev && terraform init -backend=false && terraform validate  # Success
 cd environments/dev && terraform plan      # (with a real backend configured) 99 to add, 0 errors
-cd platform && terraform test                                # 2 passed, mock_provider, no GCP call
+cd platform && terraform test                                # 5 passed, mock_provider, no GCP call
 cd modules/database/cloudsql && terraform test                # 2 passed, mock_provider, no GCP call
+cd modules/security/workload_identity && terraform test       # 2 passed, mock_provider, no GCP call
 ```
 
 The `terraform plan` above was run twice, manually, against the real
@@ -64,32 +66,43 @@ these run with no credentials, no network access, and touch nothing real:
 
 | File | Proves |
 |---|---|
-| `platform/tests/count_gating.tftest.hcl` | an empty `resources` block enables nothing; enabling one type (`buckets`) doesn't leak into any other |
+| `platform/tests/count_gating.tftest.hcl` (5 runs) | an empty `resources` block enables nothing; enabling `buckets` doesn't leak into any other type; `org_policies` respects a per-constraint toggle (`restrict_public_sql_ips: false` in the fixture is NOT in `org_policies_enforced`); an `iap` binding's `target_vm` resolves to the real `google_compute_instance` name via cross-module reference, not the config key; `binary_authorization`'s `evaluation_mode` output matches the fixture |
 | `modules/database/cloudsql/tests/sql_user_creation.tftest.hcl` | `google_sql_user` is actually created for every configured user — direct regression coverage for the real bug this rebuild found (the original module computed the user list but never created the resource) |
+| `modules/security/workload_identity/tests/binding.tftest.hcl` | the binding grants exactly `roles/iam.workloadIdentityUser`, `member` is the `project.svc.id.goog[namespace/ksa]` form GKE Workload Identity expects, and `service_account_id` resolves to the real GCP SA from config — plus a zero-instances case creates zero bindings |
 
 Run from the module directory itself: `cd platform && terraform test`, or
 `cd modules/database/cloudsql && terraform test` (each needs its own
-`terraform init` first, same as any root module — these two directories
+`terraform init` first, same as any root module — these three directories
 are the only ones set up to run standalone).
 
-**Why so little coverage, out of 29 resource types?** These two exist to
-demonstrate the pattern and to lock in the one bug this rebuild actually
-found and fixed — not as a claim that every module is covered. Extending
+**Why so little coverage, out of 33 resource types?** These exist to
+demonstrate the pattern and to lock in real bugs/regressions this rebuild
+actually found — not as a claim that every module is covered. Extending
 this to the rest of `modules/` is real, valuable, unfinished work — see
 "What's not tested" below.
 
 **A real limitation of `mock_provider`, hit while writing these**: it
 still enforces the real provider schema's field-level validation (regexes,
 etc.), even though every value is faked. A mocked resource's computed
-attribute (e.g. a VPC's `self_link`) is a plausible-looking random string,
-not a real-shaped URL — feeding that into another resource's field that
-expects a URL pattern (e.g. Cloud SQL's `private_network`) fails validation
-under `mock_provider` even though the same wiring is correct against real
-GCP. `platform/tests/count_gating.tftest.hcl` avoids this by testing a
-resource type (`buckets`) with no such cross-module reference; testing a
-type that does chain through another module's computed output would need
-an explicit `override_resource` block to give the referenced value a
-realistic shape.
+attribute (e.g. a VPC's `self_link`, or a service account's `id`) is a
+plausible-looking random string, not a real-shaped URL/resource-name —
+feeding that into another resource's field that expects that shape (e.g.
+Cloud SQL's `private_network`, or `google_service_account_iam_member
+.service_account_id`) fails validation under `mock_provider` even though
+the same wiring is correct against real GCP. `platform/tests
+/count_gating.tftest.hcl`'s `buckets`, `org_policies`, `iap`, and
+`binary_authorization` runs avoid this by testing types with no such
+cross-module computed-attribute reference (`iap`'s VM `zone`/`name`
+outputs are plain strings, not self_link-shaped, so that one plans fine
+even though it does chain through `modules/compute/vm`).
+`workload_identity` genuinely needs a real-shaped
+`google_service_account.id` downstream, so its test lives in the
+module's own `tests/` directory instead, with a hand-supplied
+correctly-shaped `service_account_ids` variable rather than chaining
+through a mocked `modules/iam/service_accounts` — same reasoning as the
+`cloudsql` test's hand-supplied `vpcs`/`passwords`. An explicit
+`override_resource` block is the alternative if you need the platform-
+level cross-module wiring itself under test.
 
 ## What's not tested
 
@@ -101,6 +114,14 @@ realistic shape.
   no run has actually triggered it (no connected GitHub remote in this
   environment).
 - **Most of `modules/`** still has no dedicated `.tftest.hcl` — only
-  `cloudsql` does. The one real `terraform plan`/`apply` against the real
-  dev config (see above) is the only cross-module exercise the other 27
-  types have had.
+  `cloudsql` and `workload_identity` do, plus `platform/tests
+  /count_gating.tftest.hcl`'s coverage of `buckets`, `org_policies`,
+  `iap`, and `binary_authorization`. The one real `terraform plan`/
+  `apply` against the real dev config (see above) is the only
+  cross-module exercise the other ~27 types have had.
+- **`org_policies`, `iap`, `workload_identity`, and
+  `binary_authorization`** (added for the zero-trust workstream — see
+  [docs/security.md](security.md)) have never been applied against a
+  real project. `binary_authorization`'s `ALWAYS_DENY` default in
+  particular has never been proven to actually block a real image
+  deploy, only planned.

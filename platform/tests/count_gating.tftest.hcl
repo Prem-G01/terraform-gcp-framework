@@ -57,3 +57,65 @@ run "buckets_enabled_creates_the_bucket_and_nothing_else" {
     error_message = "Only 'buckets' should be enabled — got: ${jsonencode(output.enabled_resources)}"
   }
 }
+
+run "org_policies_enabled_respects_per_constraint_toggles" {
+  command = plan
+
+  variables {
+    deployment_file = "tests/fixtures/org_policies_enabled.json"
+  }
+
+  # The fixture sets restrict_public_sql_ips: false — proves a single
+  # constraint can be deliberately loosened without the module ignoring
+  # the toggle and enforcing it anyway.
+  assert {
+    condition     = length(output.org_policies_enforced) == 4
+    error_message = "Expected 4 enforced constraints (5 minus the disabled restrict_public_sql_ips) — got: ${jsonencode(output.org_policies_enforced)}"
+  }
+
+  assert {
+    condition     = !contains(output.org_policies_enforced, "sql.restrictPublicIp")
+    error_message = "sql.restrictPublicIp should NOT be enforced — the fixture sets restrict_public_sql_ips: false"
+  }
+
+  assert {
+    condition     = contains(output.org_policies_enforced, "iam.disableServiceAccountKeyCreation")
+    error_message = "iam.disableServiceAccountKeyCreation should be enforced per the fixture"
+  }
+
+  assert {
+    condition     = length(output.enabled_resources) == 1
+    error_message = "Only 'org_policies' should be enabled — got: ${jsonencode(output.enabled_resources)}"
+  }
+}
+
+run "iap_binding_resolves_to_the_real_vm" {
+  command = plan
+
+  variables {
+    deployment_file = "tests/fixtures/iap_enabled.json"
+  }
+
+  assert {
+    condition     = contains(keys(output.iap_bindings), "admin-access-group:platform-admins@example.com")
+    error_message = "Expected one IAP binding keyed by '<instance>-<member>' — got: ${jsonencode(output.iap_bindings)}"
+  }
+
+  assert {
+    condition     = output.iap_bindings["admin-access-group:platform-admins@example.com"].target_vm == "app-vm-01"
+    error_message = "IAP binding's target_vm should resolve to the real google_compute_instance name, not the config key"
+  }
+}
+
+run "binary_authorization_defaults_to_always_deny" {
+  command = plan
+
+  variables {
+    deployment_file = "tests/fixtures/binary_authorization_enabled.json"
+  }
+
+  assert {
+    condition     = output.binary_authorization_evaluation_mode == "ALWAYS_DENY"
+    error_message = "Fixture sets evaluation_mode: ALWAYS_DENY — the safe starting point with no attestors configured"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "apiVersion": "platform.gcp/v1",
+  "kind": "Deployment",
+  "metadata": { "name": "test", "environment": "dev", "owner": "devops" },
+  "project": { "id": "prj-dg-devops-test" },
+  "region": { "primary": "asia-south1" },
+  "resources": {
+    "org_policies": {
+      "enabled": true,
+      "instances": {},
+      "disable_service_account_key_creation": true,
+      "restrict_vm_external_ips": true,
+      "restrict_public_sql_ips": false,
+      "require_os_login": true,
+      "skip_default_network_creation": true
+    }
+  }
+}

@@ -18,6 +18,7 @@ locals {
     "serviceusage.googleapis.com",
     "storage.googleapis.com",
     "sts.googleapis.com",
+    "securesourcemanager.googleapis.com",
   ]
 
   # Curated least-privilege role set for the apply SA — every service this
@@ -176,6 +177,68 @@ resource "google_storage_bucket_iam_member" "apply_writes_artifacts" {
   bucket = google_storage_bucket.artifacts.name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.terraform_apply.email}"
+}
+
+# --- Central Git repository (Secure Source Manager) ------------------------
+# Google's current GCP-hosted git product — Cloud Source Repositories has
+# not accepted new customers since 2024-06-17, see docs/service-accounts.md
+# "Central repository". Public endpoint by default (var.git_instance_is_private
+# = false) — Cloud Build and engineers push over the internet, authenticated
+# by IAM, no VPC/Private Service Connect networking required.
+
+resource "google_secure_source_manager_instance" "platform" {
+  count = var.create_git_repository ? 1 : 0
+
+  project     = var.project_id
+  instance_id = var.git_instance_id
+  location    = var.git_location
+
+  private_config {
+    is_private = var.git_instance_is_private
+  }
+
+  depends_on = [google_project_service.bootstrap_apis]
+}
+
+resource "google_secure_source_manager_repository" "platform" {
+  count = var.create_git_repository ? 1 : 0
+
+  project       = var.project_id
+  repository_id = var.git_repository_id
+  instance      = google_secure_source_manager_instance.platform[0].name
+  location      = var.git_location
+  description   = "Central repository for this platform — YAML-driven GCP Terraform framework."
+
+  initial_config {
+    default_branch = "main"
+    # No gitignores/license/readme templates — this repo already has real
+    # content to push, not an empty starter.
+  }
+}
+
+# Dedicated identity for pushing/pulling — deliberately separate from
+# tf-plan/tf-apply (those exist to run Terraform against GCP, not to hold
+# git credentials; keeping them apart means a compromised git-push identity
+# can't touch infrastructure, and vice versa).
+resource "google_service_account" "git_push" {
+  count = var.create_git_repository ? 1 : 0
+
+  project      = var.project_id
+  account_id   = "git-push"
+  display_name = "CI/CD Git Push"
+  description  = "Pushes to the central Secure Source Manager repository — e.g. a pipeline step that commits generated files back. See docs/service-accounts.md."
+
+  depends_on = [google_project_service.bootstrap_apis]
+}
+
+resource "google_secure_source_manager_repository_iam_member" "git_push_writer" {
+  count = var.create_git_repository ? 1 : 0
+
+  project       = var.project_id
+  location      = var.git_location
+  repository_id = google_secure_source_manager_repository.platform[0].repository_id
+  role          = "roles/securesourcemanager.repoWriter"
+  member        = "serviceAccount:${google_service_account.git_push[0].email}"
 }
 
 # --- Workload Identity Federation (optional, off by default) --------------

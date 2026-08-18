@@ -28,9 +28,32 @@ variable "state_bucket_retention_days" {
 }
 
 variable "environments" {
-  description = "Environment names this bootstrap grants the apply SA access to (used for per-environment IAM conditions, not for creating environment resources — bootstrap never touches environments/)."
+  description = "Environment names this bootstrap creates a dedicated tf-plan-<env>/tf-apply-<env> pair for (used for per-environment IAM conditions, not for creating environment resources — bootstrap never touches environments/)."
   type        = list(string)
   default     = ["dev", "sit", "uat", "prod"]
+}
+
+variable "home_environment" {
+  description = "The one entry in var.environments whose real GCP project IS var.project_id — its tf-plan/tf-apply pair gets project-level roles granted directly by this stack. Every other environment's pair gets its roles from bootstrap/grants/ instead, applied against that environment's own project."
+  type        = string
+  default     = "dev"
+}
+
+variable "log_bucket_name" {
+  description = "Globally-unique GCS bucket name for centralized Cloud Logging export — every environment's logs, kept here rather than in each spoke project. No default, same reasoning as state_bucket_name."
+  type        = string
+}
+
+variable "log_bucket_retention_days" {
+  description = "How long an exported log object is kept before GCS deletes it."
+  type        = number
+  default     = 400
+}
+
+variable "log_sink_writer_identities" {
+  description = "Map of environment name to the writer_identity output of that environment's google_logging_project_sink, created in bootstrap/grants/<that project>/ (see docs/logging.md \"Centralized logging\"). Grants each identity write access to the central log bucket. var.home_environment's own sink is wired up directly in main.tf and does not need an entry here."
+  type        = map(string)
+  default     = {}
 }
 
 variable "enable_workload_identity_federation" {

@@ -38,47 +38,71 @@ deploy.
 No developer runs `terraform apply` from a laptop against a shared
 environment — `environments/<env>/` works fine locally for `plan`
 (read-only) but `apply` is deliberately something only `apply.yml` does,
-as the `tf-apply` service account, after approval.
+as that environment's own `tf-apply-<env>` service account, after
+approval. Every environment has its own dedicated `tf-plan-<env>`/
+`tf-apply-<env>` pair (see
+[docs/service-accounts.md](service-accounts.md)) — `dev`'s workflow run
+can never authenticate as `prod`'s identity, even by mistake.
 
 ## One-time setup
 
-1. **Workload Identity Federation** — apply `bootstrap/` with
-   `enable_workload_identity_federation = true` and
-   `github_repository = "<org>/<repo>"`. This creates the WIF pool,
-   provider, and the bindings letting only that repository assume
-   `tf-plan`/`tf-apply`.
+1. **`bootstrap/`** — apply with `enable_workload_identity_federation =
+   true` and `github_repository = "<org>/<repo>"`. This creates the WIF
+   pool/provider and, for every environment, a dedicated `tf-plan-<env>`/
+   `tf-apply-<env>` pair with the impersonation bindings letting only that
+   repository (and, for apply, only a run under the matching GitHub
+   Environment) assume them.
 
-2. **Repository variable `ENVIRONMENTS_JSON`** (Settings > Secrets and
+2. **`bootstrap/grants/`** — for every environment other than
+   `var.home_environment` (typically `sit`, `uat`, `prod` — separate GCP
+   projects), apply this once against that project so its
+   `tf-plan-<env>`/`tf-apply-<env>` (created centrally by step 1) actually
+   has roles there. See
+   [docs/service-accounts.md](service-accounts.md) "Cross-project access".
+
+3. **Repository variable `ENVIRONMENTS_JSON`** (Settings > Secrets and
    variables > Actions > Variables) — a JSON object keyed by environment
-   name, values from the `bootstrap` outputs plus the WIF provider
-   resource name:
+   name, values from the `bootstrap` outputs (`terraform_plan_sa_emails`/
+   `terraform_apply_sa_emails` are already keyed by environment) plus the
+   WIF provider resource name:
 
    ```json
    {
      "dev": {
        "wif_provider": "projects/<number>/locations/global/workloadIdentityPools/cicd-pool/providers/github",
-       "tf_plan_sa": "tf-plan@prj-dg-devops-test.iam.gserviceaccount.com",
-       "tf_apply_sa": "tf-apply@prj-dg-devops-test.iam.gserviceaccount.com",
+       "tf_plan_sa": "tf-plan-dev@prj-dg-devops-test.iam.gserviceaccount.com",
+       "tf_apply_sa": "tf-apply-dev@prj-dg-devops-test.iam.gserviceaccount.com",
        "state_bucket": "prj-dg-devops-test-tfstate",
        "artifact_bucket": "prj-dg-devops-test-tf-artifacts"
      },
-     "sit": { "...": "..." },
+     "sit": {
+       "wif_provider": "projects/<number>/locations/global/workloadIdentityPools/cicd-pool/providers/github",
+       "tf_plan_sa": "tf-plan-sit@prj-dg-devops-test.iam.gserviceaccount.com",
+       "tf_apply_sa": "tf-apply-sit@prj-dg-devops-test.iam.gserviceaccount.com",
+       "state_bucket": "prj-dg-devops-test-tfstate",
+       "artifact_bucket": "prj-dg-devops-test-tf-artifacts"
+     },
      "uat": { "...": "..." },
      "prod": { "...": "..." }
    }
    ```
 
-   None of these values are secret (project IDs, bucket names, service
-   account emails, and the WIF provider path are not credentials) — a
-   repository *variable*, not a *secret*, is the correct GitHub construct
-   here.
+   `wif_provider` and the bucket names are the same across every
+   environment (one WIF pool, one central state/artifact bucket pair) —
+   only `tf_plan_sa`/`tf_apply_sa` genuinely differ per environment. None
+   of these values are secret (project IDs, bucket names, service account
+   emails, and the WIF provider path are not credentials) — a repository
+   *variable*, not a *secret*, is the correct GitHub construct here.
 
-3. **GitHub Environments** — create `dev`, `sit`, `uat`, `prod` under
+4. **GitHub Environments** — create `dev`, `sit`, `uat`, `prod` under
    Settings > Environments, and add required reviewers to each one you
    want gated (typically all but `dev`). `apply.yml` runs each matrix job
    under `environment: ${{ matrix.env }}`, so the job pauses for approval
    exactly there — this is the GitHub-native equivalent of Cloud Build's
-   old `--require-approval` trigger flag.
+   old `--require-approval` trigger flag, and it's also what makes the
+   `attribute.environment` WIF condition in `bootstrap/main.tf`
+   meaningful (see [docs/service-accounts.md](service-accounts.md) "No
+   long-lived keys").
 
 ## Why re-validate in the apply pipeline
 
@@ -94,9 +118,13 @@ to `terraform apply` directly instead of re-planning.
 
 ## What this rebuild did not do
 
-No workflow, WIF binding, or GitHub Environment here has actually run —
-this repository has no connected GitHub remote yet and this rebuild was
-explicitly code-only (see [docs/troubleshooting.md](troubleshooting.md)).
-The YAML is real and `terraform validate`/`fmt` were run against every
-stack it orchestrates, but the workflow steps themselves are untested
-against a live GitHub Actions run.
+No workflow, WIF binding, GitHub Environment, or `bootstrap/grants/` apply
+here has actually run — this repository has no connected GitHub remote
+yet and this rebuild was explicitly code-only (see
+[docs/troubleshooting.md](troubleshooting.md)). The YAML is real and
+`terraform validate`/`fmt`/`plan` were run against every stack it
+orchestrates (both `bootstrap/` and `bootstrap/grants/` plan cleanly
+against placeholder project IDs), but the workflow steps themselves are
+untested against a live GitHub Actions run, and `sit`/`uat`/`prod` are
+still placeholder project IDs — nobody has applied `bootstrap/grants/`
+against a real spoke project yet.

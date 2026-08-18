@@ -27,10 +27,12 @@ of that.
 
 ## Bootstrapping
 
-`bootstrap/` creates the state bucket, artifact bucket, and CI/CD service
-accounts. It cannot itself use a GCS backend — the bucket doesn't exist
-yet — so it deliberately uses `backend "local"` (see `bootstrap/versions.tf`).
-Run it once, manually, by a human with org-level IAM permissions:
+`bootstrap/` creates the state bucket, artifact bucket, central log
+bucket, and one dedicated `tf-plan-<env>`/`tf-apply-<env>` pair per
+environment. It cannot itself use a GCS backend — the bucket doesn't
+exist yet — so it deliberately uses `backend "local"` (see
+`bootstrap/versions.tf`). Run it once, manually, by a human with
+org-level IAM permissions:
 
 ```bash
 cd bootstrap
@@ -38,33 +40,48 @@ terraform init
 terraform apply \
   -var project_id=prj-dg-devops-test \
   -var state_bucket_name=<choose a globally-unique name> \
-  -var artifact_bucket_name=<choose a globally-unique name>
+  -var artifact_bucket_name=<choose a globally-unique name> \
+  -var log_bucket_name=<choose a globally-unique name>
 ```
 
-**This has been run**, against `prj-dg-devops-test`, on 2026-08-18 — see
+This only grants project-level roles for `var.home_environment` (default
+`dev`, whose real GCP project is `var.project_id`) — `sit`/`uat`/`prod`
+(separate projects) each need `bootstrap/grants/` applied once against
+their own project afterward, see
+[docs/service-accounts.md](service-accounts.md) "Cross-project access".
+
+**A previous version of this was run**, against `prj-dg-devops-test`, on
+2026-08-18, with a single shared `tf-plan`/`tf-apply` pair — see
 [docs/troubleshooting.md](troubleshooting.md) "Bootstrap is now live" for
 what happened (including a real `terraform import` incident worth reading
-before you run this again for another project). Outputs, for this project:
+before you run this again for another project). That deployment was fully
+torn down the same day, and `bootstrap/main.tf` has since been rewritten
+to the per-environment design described above — the outputs below are the
+current design's shape, not a record of what's live:
 
-| Output | Value |
+| Output | Shape |
 |---|---|
-| `state_bucket` | `prj-dg-devops-test-tfstate` |
-| `artifact_bucket` | `prj-dg-devops-test-tf-artifacts` |
-| `terraform_plan_sa_email` | `tf-plan@prj-dg-devops-test.iam.gserviceaccount.com` |
-| `terraform_apply_sa_email` | `tf-apply@prj-dg-devops-test.iam.gserviceaccount.com` |
+| `state_bucket` | string |
+| `artifact_bucket` | string |
+| `log_bucket` | string |
+| `terraform_plan_sa_emails` | `map(environment => email)` |
+| `terraform_apply_sa_emails` | `map(environment => email)` |
 
 These are the values every environment's `terraform init -backend-config=`
-and Cloud Build trigger `substitutions` need.
+and `.github/workflows/*.yml` `ENVIRONMENTS_JSON` repository variable need
+(see [docs/cicd.md](cicd.md)).
 
-**Still pending**: `bootstrap/terraform.tfstate.bootstrap` (local) should
-be copied into the new state bucket as a backup —
-`gs://prj-dg-devops-test-tfstate/bootstrap/terraform.tfstate` — but the
-`gsutil cp` attempt failed with `Reauthentication required.` and needs an
-interactive `gcloud auth login` (see
-[docs/troubleshooting.md](troubleshooting.md) "Bootstrap is now live").
-`bootstrap/versions.tf` itself still points at local state regardless —
-reconfiguring it to a `gcs` backend pointed at that path is a further,
-deliberate follow-up step.
+That state-backup incident is moot now — the whole earlier deployment was
+fully torn down the same day (see
+[docs/troubleshooting.md](troubleshooting.md) "Full teardown"), and
+`bootstrap/main.tf`'s design has changed since. It's worth reading for the
+*mechanics* of copying `bootstrap/terraform.tfstate.bootstrap` into the
+state bucket as a backup after a real apply, which still applies:
+`bootstrap/versions.tf` stays on `backend "local"` regardless (the bucket
+it would move state into doesn't exist until this stack's first apply
+finishes), so reconfiguring it to a `gcs` backend pointed at that path is
+still a deliberate, separate follow-up step whenever you next run this for
+real.
 
 ## Why one state file per environment for now
 

@@ -194,6 +194,13 @@ everywhere).
   `bootstrap/main.tf` git history).
 - Workload Identity Federation is authored (`bootstrap/main.tf`, off by
   default) but never created — needs a real `github_repository` value.
+- `bootstrap/main.tf` was rewritten after the teardown below to grant a
+  dedicated `tf-plan-<env>`/`tf-apply-<env>` pair per environment instead
+  of one shared pair, and `bootstrap/grants/` (a new, separate stack) was
+  added for granting those identities roles in `sit`/`uat`/`prod`'s own
+  projects. Both plan cleanly (`terraform plan` against placeholder
+  project IDs — 56 and 22 resources respectively, 0 errors) but neither
+  has been applied for real; the per-environment design was never live.
 - No integration test applies real infrastructure and tears it down.
 - Cost validation is a static price table, not a live Cloud Billing
   lookup (see `docs/validation.md`).

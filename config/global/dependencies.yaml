@@ -1,0 +1,53 @@
+# =============================================================================
+# Dependency engine
+# -----------------------------------------------------------------------------
+# Declares which resource types each resource type requires to be enabled.
+# engine/dependency_engine.py walks this graph against a deployment.yaml's
+# `resources.*.enabled` map and:
+#   - fails if an enabled resource's dependency is disabled or absent
+#   - fails on cycles (there shouldn't be any — this is also unit tested)
+#   - fails if a resource instance references another instance that does not
+#     exist (e.g. subnet.vpc: "typo-vpc")
+#
+# This mirrors the depends_on graph that used to be hand-wired in the old
+# Environment/dev/main.tf — it is now data instead of duplicated HCL.
+# =============================================================================
+
+dependencies:
+  subnet:
+    requires: [vpc]
+  firewall:
+    requires: [vpc]
+  router:
+    requires: [vpc]
+  nat:
+    requires: [router]
+  private_service_access:
+    requires: [vpc]
+  vm:
+    requires: [subnet, service_accounts]
+  cloudsql:
+    requires: [vpc, private_service_access, secrets]
+  cloudrun:
+    requires: [service_accounts]
+  load_balancer:
+    requires: [cloudrun]
+  scheduler:
+    requires: [service_accounts]
+  workflows:
+    requires: [service_accounts]
+  alert_policies:
+    requires: [notification_channels]
+  gke:
+    requires: [vpc, subnet, service_accounts]
+  cloudfunctions:
+    requires: [service_accounts]
+  memorystore:
+    requires: [vpc, private_service_access]
+
+# Resource types with no entry above (apis, kms, secrets, buckets,
+# artifact_registry, pubsub, cloudtasks, notification_channels,
+# uptime_checks, logging, bigquery, documentai, service_accounts, vpc,
+# vpc_service_controls) have no hard dependency on another platform
+# resource type. vpc_service_controls is org-level policy — it restricts
+# existing resources rather than needing any of them enabled first.

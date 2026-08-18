@@ -1,0 +1,96 @@
+# =============================================================================
+# Security / governance policy
+# -----------------------------------------------------------------------------
+# Machine-readable rules consumed by engine/security_engine.py. Each rule has
+# a stable `id` (shown in validation failures), the resource types it applies
+# to, and the condition that must hold. `severity: ERROR` blocks deployment;
+# `severity: WARNING` is reported but does not block.
+# =============================================================================
+
+policy:
+  deletion_protection_required_for:
+    - cloudsql
+    - cloudrun
+
+  kms_required_for: []   # e.g. add "buckets" once CMEK is mandated org-wide
+
+rules:
+  - id: SEC_PUBLIC_SSH
+    applies_to: [firewall]
+    severity: ERROR
+    description: "Firewall rule allows TCP/22 from 0.0.0.0/0"
+
+  - id: SEC_PUBLIC_RDP
+    applies_to: [firewall]
+    severity: ERROR
+    description: "Firewall rule allows TCP/3389 from 0.0.0.0/0"
+
+  - id: SEC_FIREWALL_OPEN_INGRESS
+    applies_to: [firewall]
+    severity: ERROR
+    description: "Ingress firewall rule has source_ranges containing 0.0.0.0/0 with no port restriction"
+
+  - id: SEC_PUBLIC_VM
+    applies_to: [vm]
+    severity: ERROR
+    description: "VM has network.public_ip = true"
+
+  - id: SEC_MISSING_OS_LOGIN
+    applies_to: [vm]
+    severity: ERROR
+    description: "VM metadata does not set enable-oslogin = TRUE"
+
+  - id: SEC_MISSING_SHIELDED_VM
+    applies_to: [vm]
+    severity: ERROR
+    description: "VM does not enable secure_boot, vtpm, and integrity_monitoring"
+
+  - id: SEC_OVERPRIVILEGED_SERVICE_ACCOUNT
+    applies_to: [service_accounts]
+    severity: WARNING
+    description: "Service account is granted roles/owner, roles/editor, or a *.admin role broader than the resource it operates"
+
+  - id: SEC_PUBLIC_BUCKET
+    applies_to: [buckets]
+    severity: ERROR
+    description: "Bucket does not set public_access_prevention = enforced and uniform_bucket_level_access = true"
+
+  - id: SEC_PUBLIC_SQL
+    applies_to: [cloudsql]
+    severity: ERROR
+    description: "Cloud SQL instance has network.ipv4_enabled = true (public IP)"
+
+  - id: SEC_SQL_NO_DELETION_PROTECTION
+    applies_to: [cloudsql]
+    severity: ERROR
+    description: "Cloud SQL instance has deletion_protection = false"
+
+  - id: SEC_KMS_ROTATION_MISSING
+    applies_to: [kms]
+    severity: WARNING
+    description: "KMS crypto key has no rotation_period set"
+
+  - id: SEC_SECRET_TOO_SHORT
+    applies_to: [secrets]
+    severity: WARNING
+    description: "Generated secret length is below config/global/defaults.yaml security_defaults.secrets.min_length"
+
+  - id: SEC_GKE_PUBLIC_CLUSTER
+    applies_to: [gke]
+    severity: ERROR
+    description: "GKE cluster has private_cluster.enable_private_nodes = false"
+
+  - id: SEC_REDIS_AUTH_DISABLED
+    applies_to: [memorystore]
+    severity: ERROR
+    description: "Memorystore instance has auth_enabled = false"
+
+  - id: SEC_REDIS_UNENCRYPTED_TRANSIT
+    applies_to: [memorystore]
+    severity: ERROR
+    description: "Memorystore instance has transit_encryption_mode = DISABLED"
+
+  - id: SEC_CLOUDFUNCTION_PUBLIC_INGRESS
+    applies_to: [cloudfunctions]
+    severity: WARNING
+    description: "Cloud Function has ingress_settings = ALLOW_ALL — confirm this function is meant to be publicly reachable (e.g. a webhook)"

@@ -1,0 +1,53 @@
+# Terraform state and working files
+**/.terraform/
+# .terraform.lock.hcl is intentionally NOT ignored — it's committed for
+# reproducible provider version resolution, see docs/modules.md.
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Never commit real deployment variables — only *.tfvars.example is tracked
+*.tfvars
+!*.tfvars.example
+
+# Local backend overrides used for `terraform init -backend-config=`
+backend.local.hcl
+
+# Validation / plan / deployment artifacts (these belong in the artifact GCS bucket, not git)
+artifacts/
+**/.generated/
+**/plan.txt
+**/plan.json
+**/validation.json
+**/deployment.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Logs
+*.log
+
+# Anything explicitly archived during the platform rebuild (legacy local state, empty stubs)
+/archive/

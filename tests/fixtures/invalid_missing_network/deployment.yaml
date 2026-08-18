@@ -1,0 +1,24 @@
+# This is the exact scenario the platform spec asks the validation engine to
+# reject: a VM declared without the network it depends on. `subnet` is
+# disabled and the vm instance itself is missing the required `subnet`
+# field, `service_account.name`, and `boot_disk.image` — both the
+# dependency engine and the schema's required-field check must fail this.
+apiVersion: platform.gcp/v1
+kind: Deployment
+metadata:
+  name: fixture
+  environment: dev
+  owner: devops
+project:
+  id: prj-dg-devops-test
+region:
+  primary: asia-south1
+resources:
+  subnet:
+    enabled: false
+    instances: {}
+  vm:
+    enabled: true
+    instances:
+      test-vm:
+        machine_type: e2-medium

@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://platform.gcp/schema/deployment.schema.json",
+  "title": "Deployment",
+  "description": "Structural schema for config/environments/<env>/deployment.yaml. Enforces the envelope and the enabled/instances contract for every resource type; per-field business rules (dependencies, security, naming) are enforced by engine/*.py, not by this schema.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "project", "region", "resources"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "platform.gcp/v1" },
+    "kind": { "const": "Deployment" },
+    "metadata": {
+      "type": "object",
+      "required": ["name", "environment"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "environment": { "type": "string", "enum": ["dev", "sit", "uat", "prod"] },
+        "owner": { "type": "string" }
+      }
+    },
+    "project": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$" }
+      }
+    },
+    "region": {
+      "type": "object",
+      "required": ["primary"],
+      "additionalProperties": false,
+      "properties": {
+        "primary": { "type": "string" },
+        "secondary": { "type": "string" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apis": {
+          "type": "object",
+          "required": ["enabled"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "services": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "vpc": { "$ref": "#/definitions/resourceBlock" },
+        "subnet": { "$ref": "#/definitions/resourceBlock" },
+        "firewall": { "$ref": "#/definitions/resourceBlock" },
+        "router": { "$ref": "#/definitions/resourceBlock" },
+        "nat": { "$ref": "#/definitions/resourceBlock" },
+        "private_service_access": { "$ref": "#/definitions/resourceBlock" },
+        "service_accounts": { "$ref": "#/definitions/resourceBlock" },
+        "vm": { "$ref": "#/definitions/resourceBlock" },
+        "secrets": { "$ref": "#/definitions/resourceBlock" },
+        "cloudsql": { "$ref": "#/definitions/resourceBlock" },
+        "buckets": { "$ref": "#/definitions/resourceBlock" },
+        "artifact_registry": { "$ref": "#/definitions/resourceBlock" },
+        "kms": { "$ref": "#/definitions/resourceBlock" },
+        "pubsub": { "$ref": "#/definitions/resourceBlock" },
+        "cloudtasks": { "$ref": "#/definitions/resourceBlock" },
+        "cloudrun": { "$ref": "#/definitions/resourceBlock" },
+        "load_balancer": { "$ref": "#/definitions/resourceBlock" },
+        "scheduler": { "$ref": "#/definitions/resourceBlock" },
+        "workflows": { "$ref": "#/definitions/resourceBlock" },
+        "notification_channels": { "$ref": "#/definitions/resourceBlock" },
+        "alert_policies": { "$ref": "#/definitions/resourceBlock" },
+        "uptime_checks": { "$ref": "#/definitions/resourceBlock" },
+        "logging": { "$ref": "#/definitions/resourceBlock" },
+        "bigquery": { "$ref": "#/definitions/resourceBlock" },
+        "documentai": { "$ref": "#/definitions/resourceBlock" },
+        "gke": { "$ref": "#/definitions/resourceBlock" },
+        "cloudfunctions": { "$ref": "#/definitions/resourceBlock" },
+        "memorystore": { "$ref": "#/definitions/resourceBlock" },
+        "vpc_service_controls": { "$ref": "#/definitions/vpcServiceControlsBlock" }
+      }
+    }
+  },
+  "definitions": {
+    "vpcServiceControlsBlock": {
+      "type": "object",
+      "description": "Like resourceBlock, plus the org-policy fields modules/security/vpc_service_controls needs — see docs/security.md before setting create_access_policy: true.",
+      "required": ["enabled", "instances"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "instances": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" }
+        },
+        "organization_id": { "type": "string" },
+        "create_access_policy": { "type": "boolean" },
+        "existing_access_policy_id": { "type": "string" },
+        "policy_title": { "type": "string" }
+      }
+    },
+    "resourceBlock": {
+      "type": "object",
+      "required": ["enabled", "instances"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "instances": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" }
+        }
+      }
+    }
+  }
+}

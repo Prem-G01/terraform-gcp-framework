@@ -1,0 +1,23 @@
+# =============================================================================
+# Approved regions
+# -----------------------------------------------------------------------------
+# engine/region_engine.py rejects any deployment.yaml whose region.primary or
+# any resource-level `region`/`location`/`zone` falls outside this list.
+# Add a region here before it can be used anywhere in config/environments/.
+# =============================================================================
+
+regions:
+  approved:
+    - asia-south1
+    - asia-east1
+    - us-central1
+
+  multi_region_locations:
+    - asia
+    - us
+    - eu
+
+  zone_suffixes:
+    - a
+    - b
+    - c

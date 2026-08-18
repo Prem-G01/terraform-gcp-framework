@@ -1,0 +1,26 @@
+# =============================================================================
+# Label / tag engine
+# -----------------------------------------------------------------------------
+# `required` keys must be present (after merge) on every labelable resource —
+# engine/security_engine.py's naming/label pass fails the deployment if one is
+# missing. `{environment}` and `{owner}` are resolved from deployment metadata
+# and config/global/defaults.yaml respectively.
+# =============================================================================
+
+labels:
+  required:
+    managed_by: terraform
+    environment: "{environment}"
+    platform: gcp-platform
+    owner: "{owner}"
+
+  optional_keys:
+    - cost_center
+    - business_unit
+    - compliance
+    - application
+
+tags:
+  default:
+    - terraform
+    - managed

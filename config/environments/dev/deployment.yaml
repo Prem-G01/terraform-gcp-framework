@@ -1,0 +1,638 @@
+# =============================================================================
+# Deployment: dev
+# -----------------------------------------------------------------------------
+# This is the ONLY file an engineer edits to change what gets deployed to
+# dev. It is validated by `engine/cli.py validate config/environments/dev`
+# before Terraform ever runs (see docs/validation.md). Fields not set here
+# fall back to config/global/defaults.yaml; org-wide policy (security,
+# naming, regions, dependencies) always comes from config/global/ and cannot
+# be overridden here.
+#
+# Setting resources.<type>.enabled: false removes that resource type from
+# the plan entirely — nothing under `instances` is evaluated or created.
+# =============================================================================
+
+apiVersion: platform.gcp/v1
+kind: Deployment
+
+metadata:
+  name: application-platform
+  environment: dev
+  owner: devops
+
+project:
+  id: prj-dg-devops-test
+
+region:
+  primary: asia-south1
+
+resources:
+
+  apis:
+    enabled: true
+    services:
+      - compute.googleapis.com
+      - servicenetworking.googleapis.com
+      - iam.googleapis.com
+      - cloudresourcemanager.googleapis.com
+      - logging.googleapis.com
+      - monitoring.googleapis.com
+      - sqladmin.googleapis.com
+      - secretmanager.googleapis.com
+      - cloudkms.googleapis.com
+      - cloudasset.googleapis.com
+      - storage.googleapis.com
+      - artifactregistry.googleapis.com
+      - run.googleapis.com
+      - cloudbuild.googleapis.com
+      - pubsub.googleapis.com
+      - documentai.googleapis.com
+      - cloudscheduler.googleapis.com
+      - workflows.googleapis.com
+      - cloudtasks.googleapis.com
+      - bigquery.googleapis.com
+      - container.googleapis.com
+      - cloudfunctions.googleapis.com
+      - redis.googleapis.com
+      - accesscontextmanager.googleapis.com
+
+  vpc:
+    enabled: true
+    instances:
+      dev-vpc:
+        description: Development VPC
+        auto_create_subnetworks: false
+        routing_mode: GLOBAL
+        mtu: 1460
+        delete_default_routes_on_create: true
+        enable_ula_internal_ipv6: false
+
+  subnet:
+    enabled: true
+    instances:
+      app-subnet:
+        vpc: dev-vpc
+        region: "{region}"
+        cidr: 10.10.1.0/24
+        description: Application subnet
+        private_ip_google_access: true
+        purpose: PRIVATE
+        role: ACTIVE
+        flow_logs:
+          enabled: true
+          aggregation_interval: INTERVAL_5_SEC
+          flow_sampling: 0.5
+          metadata: INCLUDE_ALL_METADATA
+
+  firewall:
+    enabled: true
+    instances:
+      allow-iap:
+        network: dev-vpc
+        direction: INGRESS
+        priority: 1000
+        source_ranges:
+          - 35.235.240.0/20
+        allow:
+          - protocol: tcp
+            ports: ["22", "3389"]
+      allow-internal:
+        network: dev-vpc
+        direction: INGRESS
+        priority: 1001
+        source_ranges:
+          - 10.10.1.0/24
+        allow:
+          - protocol: tcp
+          - protocol: udp
+          - protocol: icmp
+
+  router:
+    enabled: true
+    instances:
+      dev-router:
+        region: "{region}"
+        network: dev-vpc
+        description: "Cloud Router for NAT"
+        bgp:
+          asn: 64514
+          advertise_mode: DEFAULT
+
+  nat:
+    enabled: true
+    instances:
+      dev-nat:
+        region: "{region}"
+        router: dev-router
+        nat_ip_allocate_option: AUTO_ONLY
+        source_subnetwork_ip_ranges_to_nat: ALL_SUBNETWORKS_ALL_IP_RANGES
+        enable_endpoint_independent_mapping: true
+        min_ports_per_vm: 64
+        log_config:
+          enable: true
+          filter: ALL
+
+  private_service_access:
+    enabled: true
+    instances:
+      psa-dev:
+        network: dev-vpc
+        address:
+          name: google-managed-services-dev
+          purpose: VPC_PEERING
+          address_type: INTERNAL
+          prefix_length: 16
+        service: servicenetworking.googleapis.com
+
+  service_accounts:
+    enabled: true
+    instances:
+      vm-sa:
+        account_id: vm-service-account
+        display_name: VM Service Account
+        description: Service Account for Compute Engine
+        roles:
+          - roles/logging.logWriter
+          - roles/monitoring.metricWriter
+          - roles/secretmanager.secretAccessor
+      sql-sa:
+        account_id: sql-service-account
+        display_name: SQL Service Account
+        description: Service Account for Cloud SQL
+        roles:
+          - roles/cloudsql.client
+          - roles/logging.logWriter
+      workflow-sa:
+        account_id: workflow-service-account
+        display_name: Workflow Service Account
+        description: Service Account for Workflows executions
+        roles:
+          - roles/workflows.invoker
+          - roles/logging.logWriter
+      gke-node-sa:
+        account_id: gke-node-service-account
+        display_name: GKE Node Service Account
+        description: Service Account for GKE node pool VMs
+        roles:
+          - roles/logging.logWriter
+          - roles/monitoring.metricWriter
+          - roles/monitoring.viewer
+          - roles/artifactregistry.reader
+      function-sa:
+        account_id: function-service-account
+        display_name: Cloud Function Service Account
+        description: Service Account for Cloud Functions
+        roles:
+          - roles/logging.logWriter
+          - roles/monitoring.metricWriter
+          - roles/secretmanager.secretAccessor
+
+  vm:
+    enabled: true
+    instances:
+      app-vm-01:
+        zone: "{region}-a"
+        machine_type: e2-medium
+        subnet: app-subnet
+        service_account:
+          name: vm-sa
+          scopes: [cloud-platform]
+        boot_disk:
+          image: projects/debian-cloud/global/images/family/debian-12
+          size_gb: 50
+          type: pd-balanced
+        network:
+          public_ip: false
+        shielded_vm:
+          secure_boot: true
+          vtpm: true
+          integrity_monitoring: true
+        metadata:
+          enable-oslogin: "TRUE"
+          block-project-ssh-keys: "TRUE"
+        tags: [vm, secure]
+        labels:
+          app: app
+          env: dev
+
+  secrets:
+    enabled: true
+    instances:
+      mysql-root-password:
+        secret_id: mysql-root-password
+        length: 24
+        special: true
+      app-db-password:
+        secret_id: app-db-password
+        length: 32
+        special: true
+
+  cloudsql:
+    enabled: true
+    instances:
+      app-sql:
+        region: "{region}"
+        database_version: MYSQL_8_0
+        tier: db-custom-2-4096
+        availability_type: ZONAL
+        deletion_protection: true
+        disk:
+          size: 50
+          type: PD_SSD
+          autoresize: true
+        backup:
+          enabled: true
+          start_time: "00:00"
+        network:
+          private_network: dev-vpc
+          ipv4_enabled: false
+        insights:
+          query_insights_enabled: true
+          query_string_length: 1024
+          record_application_tags: true
+          record_client_address: true
+        users:
+          root:
+            username: root
+            password_secret: mysql-root-password
+            host: "%"
+          appuser:
+            username: appuser
+            password_secret: app-db-password
+            host: "%"
+
+  buckets:
+    enabled: true
+    instances:
+      app-storage:
+        name: "{project_id}-{environment}-app-storage"
+        location: ASIA-SOUTH1
+        storage_class: STANDARD
+        force_destroy: false
+        versioning:
+          enabled: true
+        uniform_bucket_level_access: true
+        public_access_prevention: enforced
+        labels:
+          application: app
+        lifecycle:
+          enabled: true
+          age: 30
+          action: Delete
+      tf-backup:
+        name: "{project_id}-{environment}-tf-backup"
+        location: ASIA-SOUTH1
+        storage_class: STANDARD
+        force_destroy: false
+        versioning:
+          enabled: true
+        uniform_bucket_level_access: true
+        public_access_prevention: enforced
+        labels:
+          application: terraform
+        lifecycle:
+          enabled: true
+          age: 90
+          action: Delete
+
+  artifact_registry:
+    enabled: true
+    instances:
+      docker:
+        repository_id: docker
+        format: DOCKER
+        location: "{region}"
+        description: Docker images repository
+        immutable_tags: false
+        cleanup_policy:
+          enabled: true
+          keep_count: 20
+      python:
+        repository_id: python
+        format: PYTHON
+        location: "{region}"
+        description: Python packages
+        immutable_tags: false
+        cleanup_policy:
+          enabled: true
+          keep_count: 10
+      maven:
+        repository_id: maven
+        format: MAVEN
+        location: "{region}"
+        description: Maven repository
+        immutable_tags: false
+        cleanup_policy:
+          enabled: true
+          keep_count: 10
+
+  kms:
+    enabled: true
+    instances:
+      app-keyring:
+        location: "{region}"
+        keys:
+          storage-key:
+            rotation_period: 7776000s
+            purpose: ENCRYPT_DECRYPT
+          cloudsql-key:
+            rotation_period: 7776000s
+            purpose: ENCRYPT_DECRYPT
+          secrets-key:
+            rotation_period: 7776000s
+            purpose: ENCRYPT_DECRYPT
+          artifact-key:
+            rotation_period: 7776000s
+            purpose: ENCRYPT_DECRYPT
+
+  pubsub:
+    enabled: true
+    instances:
+      app-events:
+        topic:
+          name: app-events
+          kms_key: ""
+          message_retention_duration: "604800s"
+        subscriptions:
+          app-events-sub:
+            name: app-events-sub
+            ack_deadline_seconds: 30
+            message_retention_duration: "604800s"
+            retain_acked_messages: false
+            enable_message_ordering: false
+            expiration_policy:
+              ttl: ""
+            retry_policy:
+              minimum_backoff: "10s"
+              maximum_backoff: "600s"
+            dead_letter_policy:
+              enabled: false
+              topic: ""
+              max_delivery_attempts: 5
+
+  cloudtasks:
+    enabled: true
+    instances:
+      app-queue:
+        location: "{region}"
+        rate_limits:
+          max_dispatches_per_second: 10
+          max_concurrent_dispatches: 20
+        retry_config:
+          max_attempts: 5
+          min_backoff: "1s"
+          max_backoff: "60s"
+          max_doublings: 5
+          max_retry_duration: "300s"
+        stackdriver_logging_config:
+          sampling_ratio: 1.0
+
+  cloudrun:
+    enabled: true
+    instances:
+      app-api:
+        location: "{region}"
+        ingress: INGRESS_TRAFFIC_ALL
+        deletion_protection: false
+        image:
+          # Was asia-south1-docker.pkg.dev, which 403'd on 2026-08-18 — the
+          # google/cloudrun "hello" sample is only published at the
+          # multi-region us-docker.pkg.dev host, not per-region mirrors.
+          # Replace with your own app image before this represents real work.
+          repository: us-docker.pkg.dev
+          path: cloudrun/container/hello
+          tag: latest
+        service_account:
+          name: vm-sa
+        scaling:
+          min_instance_count: 0
+          max_instance_count: 3
+        resources:
+          cpu: "1"
+          memory: "512Mi"
+        env:
+          ENV: dev
+          LOG_LEVEL: INFO
+        labels:
+          app: app
+          env: dev
+
+  load_balancer:
+    enabled: true
+    instances:
+      app-lb:
+        region: "{region}"
+        global_ip:
+          enabled: true
+        ssl:
+          enabled: false
+        backend:
+          type: CLOUD_RUN
+          service: app-api
+        health_check:
+          request_path: "/"
+          port: 443
+        timeout_sec: 30
+
+  scheduler:
+    enabled: true
+    instances:
+      cleanup-job:
+        location: "{region}"
+        schedule: "0 1 * * *"
+        time_zone: "Asia/Kolkata"
+        retry_config:
+          retry_count: 3
+          max_retry_duration: "300s"
+          min_backoff_duration: "5s"
+          max_backoff_duration: "60s"
+          max_doublings: 5
+        http_target:
+          uri: "https://app-api-xxxx.a.run.app"
+          http_method: POST
+          oidc_token:
+            service_account_email: ""
+          headers:
+            Content-Type: application/json
+          body: "{}"
+
+  workflows:
+    enabled: true
+    instances:
+      app-workflow:
+        region: "{region}"
+        description: "Application Workflow"
+        service_account: workflow-sa
+        source_contents: |
+          main:
+            steps:
+              - init:
+                  assign:
+                    - message: "Hello from Workflow"
+              - return_result:
+                  return: $${message}
+
+  notification_channels:
+    enabled: true
+    instances:
+      email:
+        type: email
+        address: premkumar.gunasekaran@securekloud.com
+
+  alert_policies:
+    enabled: true
+    instances:
+      vm-cpu:
+        display_name: VM CPU Usage
+        filter: >
+          metric.type="compute.googleapis.com/instance/cpu/utilization"
+          resource.type="gce_instance"
+        threshold: 0.8
+        duration: 300s
+        comparison: COMPARISON_GT
+      vm-disk:
+        display_name: VM Disk Usage
+        filter: >
+          metric.type="agent.googleapis.com/disk/percent_used"
+          resource.type="gce_instance"
+        threshold: 90
+        duration: 300s
+        comparison: COMPARISON_GT
+      cloudsql-cpu:
+        display_name: CloudSQL CPU Usage
+        filter: >
+          metric.type="cloudsql.googleapis.com/database/cpu/utilization"
+          resource.type="cloudsql_database"
+        threshold: 0.8
+        duration: 300s
+        comparison: COMPARISON_GT
+
+  uptime_checks:
+    enabled: true
+    instances:
+      app-health:
+        display_name: App Health
+        host: example.com
+        path: /health
+        port: 443
+        use_ssl: true
+
+  logging:
+    enabled: true
+    instances:
+      app-logs:
+        bucket_id: app-logs
+        location: global
+        retention_days: 30
+      audit-logs:
+        bucket_id: audit-logs
+        location: global
+        retention_days: 365
+
+  bigquery:
+    enabled: true
+    instances:
+      app_dataset:
+        location: "{region}"
+        description: "Application Dataset"
+        delete_contents_on_destroy: false
+        default_table_expiration_ms: null
+        tables:
+          users:
+            table_id: users
+          orders:
+            table_id: orders
+
+  documentai:
+    enabled: true
+    instances:
+      invoice:
+        location: us
+        display_name: invoice-processor
+        type: INVOICE_PROCESSOR
+      ocr:
+        location: us
+        display_name: ocr-processor
+        type: OCR_PROCESSOR
+
+  # KNOWN ISSUE (2026-08-18): a real apply created this cluster but its
+  # node failed to go healthy — the CNI plugin never initialized and the
+  # node couldn't pull the base "pause" image from the regional Artifact
+  # Registry mirror (`dial tcp ... i/o timeout`). Likely an egress-routing
+  # gap for private-node GKE talking to gcr.io/pkg.dev through this VPC's
+  # Cloud NAT — not yet root-caused. Investigate before relying on this in
+  # a real deployment; see docs/troubleshooting.md.
+  gke:
+    enabled: true
+    instances:
+      app-cluster:
+        location: "{region}-a"
+        network: dev-vpc
+        subnet: app-subnet
+        release_channel: REGULAR
+        network_policy_enabled: true
+        deletion_protection: true
+        private_cluster:
+          enable_private_nodes: true
+          enable_private_endpoint: false
+          master_ipv4_cidr_block: 172.16.0.0/28
+        node_pool:
+          machine_type: e2-medium
+          disk_size_gb: 50
+          disk_type: pd-balanced
+          service_account: gke-node-sa
+          autoscaling:
+            min_node_count: 1
+            max_node_count: 3
+
+  # Left disabled: source.object below (functions/process-upload.zip) does
+  # not exist in the bucket — a real terraform apply on 2026-08-18 failed
+  # with a 404 for exactly that reason. Cloud Functions needs real,
+  # already-uploaded source code; upload a real zip to that bucket path
+  # (or point source at one that exists) before flipping this to true.
+  cloudfunctions:
+    enabled: false
+    instances:
+      process-upload:
+        location: "{region}"
+        runtime: python312
+        entry_point: process_upload
+        source:
+          bucket: "{project_id}-{environment}-app-storage"
+          object: functions/process-upload.zip
+        service_account:
+          name: function-sa
+        scaling:
+          min_instance_count: 0
+          max_instance_count: 3
+        resources:
+          memory: 256M
+          timeout_seconds: 60
+        ingress_settings: ALLOW_INTERNAL_ONLY
+        env:
+          ENV: dev
+
+  memorystore:
+    enabled: true
+    instances:
+      app-cache:
+        region: "{region}"
+        tier: BASIC
+        memory_size_gb: 1
+        network: dev-vpc
+        redis_version: REDIS_7_2
+        auth_enabled: true
+        transit_encryption_mode: SERVER_AUTHENTICATION
+
+  # Org-level singleton policy — left disabled. Enabling it wrong can cut
+  # this (or any) project off from APIs every other resource here depends
+  # on. Read docs/security.md "VPC Service Controls — read before
+  # enabling" and confirm organization_id + existing_access_policy_id
+  # (from `gcloud access-context-manager policies list`) before flipping
+  # this on for a real project.
+  vpc_service_controls:
+    enabled: false
+    organization_id: ""
+    create_access_policy: false
+    existing_access_policy_id: ""
+    instances: {}

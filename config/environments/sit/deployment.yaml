@@ -1,0 +1,74 @@
+# =============================================================================
+# Deployment: sit
+# -----------------------------------------------------------------------------
+# TEMPLATE — no SIT infrastructure existed in the original repository, so this
+# file intentionally deploys nothing beyond API enablement + the network
+# foundation. Copy the resource blocks you need from
+# config/environments/dev/deployment.yaml, adjust names/sizing for SIT, and
+# flip `enabled: true`. See docs/configuration.md.
+# =============================================================================
+
+apiVersion: platform.gcp/v1
+kind: Deployment
+
+metadata:
+  name: application-platform
+  environment: sit
+  owner: devops
+
+project:
+  id: prj-dg-devops-test-sit   # placeholder — replace with the real SIT project ID
+
+region:
+  primary: asia-south1
+
+resources:
+
+  apis:
+    enabled: true
+    services:
+      - compute.googleapis.com
+      - iam.googleapis.com
+      - cloudresourcemanager.googleapis.com
+      - logging.googleapis.com
+      - monitoring.googleapis.com
+
+  vpc:
+    enabled: true
+    instances:
+      sit-vpc:
+        description: SIT VPC
+        auto_create_subnetworks: false
+        routing_mode: GLOBAL
+        mtu: 1460
+        delete_default_routes_on_create: true
+        enable_ula_internal_ipv6: false
+
+  subnet: { enabled: false, instances: {} }
+  firewall: { enabled: false, instances: {} }
+  router: { enabled: false, instances: {} }
+  nat: { enabled: false, instances: {} }
+  private_service_access: { enabled: false, instances: {} }
+  service_accounts: { enabled: false, instances: {} }
+  vm: { enabled: false, instances: {} }
+  secrets: { enabled: false, instances: {} }
+  cloudsql: { enabled: false, instances: {} }
+  buckets: { enabled: false, instances: {} }
+  artifact_registry: { enabled: false, instances: {} }
+  kms: { enabled: false, instances: {} }
+  pubsub: { enabled: false, instances: {} }
+  cloudtasks: { enabled: false, instances: {} }
+  cloudrun: { enabled: false, instances: {} }
+  load_balancer: { enabled: false, instances: {} }
+  scheduler: { enabled: false, instances: {} }
+  workflows: { enabled: false, instances: {} }
+  notification_channels: { enabled: false, instances: {} }
+  alert_policies: { enabled: false, instances: {} }
+  uptime_checks: { enabled: false, instances: {} }
+  logging: { enabled: false, instances: {} }
+  bigquery: { enabled: false, instances: {} }
+  documentai: { enabled: false, instances: {} }
+  gke: { enabled: false, instances: {} }
+  cloudfunctions: { enabled: false, instances: {} }
+  memorystore: { enabled: false, instances: {} }
+  vpc_service_controls: { enabled: false, organization_id: "", create_access_policy: false, existing_access_policy_id: "", instances: {} }

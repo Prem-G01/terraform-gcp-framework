@@ -1,0 +1,37 @@
+# vm.test-vm.subnet points at a subnet instance that does not exist —
+# dependency_engine.validate_instance_references must catch this even
+# though the `subnet` resource type itself is enabled.
+apiVersion: platform.gcp/v1
+kind: Deployment
+metadata:
+  name: fixture
+  environment: dev
+  owner: devops
+project:
+  id: prj-dg-devops-test
+region:
+  primary: asia-south1
+resources:
+  subnet:
+    enabled: true
+    instances:
+      real-subnet:
+        vpc: some-vpc
+        region: asia-south1
+        cidr: 10.20.2.0/24
+  service_accounts:
+    enabled: true
+    instances:
+      test-sa:
+        account_id: test-service-account
+  vm:
+    enabled: true
+    instances:
+      test-vm:
+        zone: asia-south1-a
+        machine_type: e2-medium
+        subnet: typo-subnet-does-not-exist
+        service_account:
+          name: test-sa
+        boot_disk:
+          image: projects/debian-cloud/global/images/family/debian-12

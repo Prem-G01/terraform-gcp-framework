@@ -1,0 +1,29 @@
+# firewall allows TCP/22 from 0.0.0.0/0 — engine.security_engine must flag
+# SEC_PUBLIC_SSH.
+apiVersion: platform.gcp/v1
+kind: Deployment
+metadata:
+  name: fixture
+  environment: dev
+  owner: devops
+project:
+  id: prj-dg-devops-test
+region:
+  primary: asia-south1
+resources:
+  vpc:
+    enabled: true
+    instances:
+      test-vpc:
+        auto_create_subnetworks: false
+        routing_mode: GLOBAL
+  firewall:
+    enabled: true
+    instances:
+      allow-ssh-everywhere:
+        network: test-vpc
+        direction: INGRESS
+        source_ranges: ["0.0.0.0/0"]
+        allow:
+          - protocol: tcp
+            ports: ["22"]

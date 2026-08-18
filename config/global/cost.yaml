@@ -1,0 +1,36 @@
+# =============================================================================
+# Cost validation
+# -----------------------------------------------------------------------------
+# HONEST LIMITATION (see docs/validation.md "Cost validation"): these are
+# static, approximate list-price-per-hour figures for asia-south1, not a
+# live Cloud Billing Catalog lookup — there is no GCP API call anywhere in
+# this engine. Treat `estimated_monthly_usd` in a validation report as a
+# rough budget guardrail, not an invoice. Update the tables below when GCP
+# pricing changes materially, or replace this engine with a real Cloud
+# Billing Catalog API integration (see docs/troubleshooting.md).
+# =============================================================================
+
+thresholds:
+  # WARNING (not ERROR) when an environment's estimated combined monthly
+  # compute + Cloud SQL spend exceeds this. Override per environment.
+  monthly_usd_warning:
+    dev: 300
+    sit: 500
+    uat: 800
+    prod: 5000
+
+# Approximate on-demand USD/hour, asia-south1, August 2026 list price.
+machine_type_hourly_usd:
+  e2-micro: 0.0090
+  e2-small: 0.0180
+  e2-medium: 0.0360
+  e2-standard-2: 0.0720
+  e2-standard-4: 0.1440
+  n2-standard-2: 0.1114
+  n2-standard-4: 0.2228
+
+cloudsql_tier_hourly_usd:
+  db-f1-micro: 0.0150
+  db-g1-small: 0.0500
+  db-custom-2-4096: 0.1000
+  db-custom-4-8192: 0.2000

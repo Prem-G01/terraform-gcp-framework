@@ -1,0 +1,77 @@
+# =============================================================================
+# Platform defaults
+# -----------------------------------------------------------------------------
+# Single source of truth for values that apply to every environment unless a
+# deployment.yaml explicitly overrides them. Modules never hardcode these —
+# the config loader merges this file underneath each environment's config.
+# See docs/configuration.md for the full merge order.
+# =============================================================================
+
+organization:
+  company: "DG"
+  business_unit: "Cloud"
+  owner: "DevOps"
+
+# Security posture applied to every resource unless a resource instance
+# overrides a field explicitly. Enforced twice: as the Terraform default
+# (modules fall back to these when a field is omitted) and as a security
+# validation rule (engine/security_engine.py) that flags any override that
+# weakens them.
+security_defaults:
+  compute:
+    public_ip: false
+    os_login: true
+    shielded_vm:
+      enable_secure_boot: true
+      enable_vtpm: true
+      enable_integrity_monitoring: true
+    block_project_ssh_keys: true
+  service_account:
+    scopes:
+      - "https://www.googleapis.com/auth/cloud-platform"
+    create_default_compute_sa: false
+  storage:
+    uniform_bucket_level_access: true
+    public_access_prevention: "enforced"
+    versioning: true
+  database:
+    deletion_protection: true
+    require_private_network: true
+    public_ip: false
+  kms:
+    prevent_destroy: true
+    default_rotation_period: "7776000s" # 90 days
+  network:
+    delete_default_routes_on_create: true
+    flow_logs_enabled: true
+  secrets:
+    min_length: 16
+
+labels_defaults:
+  managed_by: terraform
+  platform: gcp-platform
+
+# Applied only when a resource config omits the field — never overrides an
+# explicit value from an environment's deployment.yaml.
+resource_defaults:
+  vm:
+    machine_type: e2-medium
+    boot_disk:
+      type: pd-balanced
+      size_gb: 50
+  cloudsql:
+    tier: db-custom-2-4096
+    availability_type: ZONAL
+    disk:
+      type: PD_SSD
+      autoresize: true
+  cloudrun:
+    scaling:
+      min_instance_count: 0
+      max_instance_count: 3
+    resources:
+      cpu: "1"
+      memory: "512Mi"
+  load_balancer:
+    ssl_enabled: true
+    timeout_sec: 30

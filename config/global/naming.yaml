@@ -1,0 +1,38 @@
+# =============================================================================
+# Naming engine rules
+# -----------------------------------------------------------------------------
+# Consumed by engine/naming_engine.py (validation) and available to Terraform
+# via modules/shared/naming for generating a compliant name when a resource
+# instance does not set an explicit `name`. Tokens in `pattern` are resolved
+# from: {company} (config/global/defaults.yaml), {environment} (deployment
+# metadata), {service} (resource type key), {name} (instance key).
+# =============================================================================
+
+naming:
+  separator: "-"
+
+  pattern:
+    default: "{company}-{environment}-{service}-{name}"
+    project: "{company}-{environment}-{name}"
+    # GCE instance / disk names: RFC1035, must start with a lowercase letter
+    vm: "{company}-{environment}-vm-{name}"
+    sql: "{company}-{environment}-sql-{name}"
+
+  max_length:
+    default: 63
+    compute: 63
+    bucket: 63
+    sql_instance: 98
+    bigquery_dataset: 1024
+    project_id: 30
+
+  allowed_characters:
+    # POSIX regex modules can use directly with `can(regex(...))`
+    default: "^[a-z][a-z0-9-]*[a-z0-9]$"
+    bucket: "^[a-z0-9][a-z0-9._-]*[a-z0-9]$"
+    bigquery_dataset: "^[a-zA-Z0-9_]+$"
+
+  reserved_words:
+    - google
+    - ssl-vip
+    - test

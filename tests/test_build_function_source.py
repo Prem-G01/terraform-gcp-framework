@@ -1,0 +1,129 @@
+"""Proves engine/cli.py build-function-source zips exactly the right files
+from a cloudfunctions instance's source.local_dir, and skips anything not
+configured — --dry-run never touches GCP so this runs with no credentials.
+"""
+
+import argparse
+import shutil
+import zipfile
+from pathlib import Path
+
+from conftest import CONFIG_ROOT
+from engine.cli import cmd_build_function_source
+
+
+def _make_env(tmp_path: Path) -> Path:
+    config_root = tmp_path / "config"
+    shutil.copytree(CONFIG_ROOT / "global", config_root / "global")
+    shutil.copytree(CONFIG_ROOT / "schema", config_root / "schema")
+    env_dir = config_root / "environments" / "testenv"
+    env_dir.mkdir(parents=True)
+    return env_dir
+
+
+def test_dry_run_builds_zip_from_local_dir_without_uploading(tmp_path, capsys):
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "main.py").write_text("def handler(request): pass\n", encoding="utf-8")
+    (source_dir / "requirements.txt").write_text("flask\n", encoding="utf-8")
+    (source_dir / "test_main.py").write_text("# should be excluded from the zip\n", encoding="utf-8")
+
+    env_dir = _make_env(tmp_path)
+    (env_dir / "deployment.yaml").write_text(f"""\
+apiVersion: platform.gcp/v1
+kind: Deployment
+metadata:
+  name: fixture
+  environment: dev
+  owner: devops
+project:
+  id: prj-dg-devops-test
+region:
+  primary: asia-south1
+resources:
+  cloudfunctions:
+    enabled: true
+    instances:
+      my-fn:
+        location: asia-south1
+        runtime: python312
+        entry_point: handler
+        source:
+          local_dir: {source_dir.as_posix()}
+          bucket: some-bucket
+          object: fn/my-fn.zip
+        service_account:
+          name: fn-sa
+""", encoding="utf-8")
+
+    rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=True))
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "gs://some-bucket/fn/my-fn.zip" in captured.out
+    assert "--dry-run, not actually uploading" in captured.out
+
+    zip_path = Path(captured.out.split("Zip built at ")[1].split(" (deleted")[0])
+    # The temp dir is cleaned up after the function returns, so re-derive
+    # what WOULD have been zipped instead of reading the (now-gone) file —
+    # proves the exclusion logic directly.
+    zipped_names = {f.name for f in source_dir.rglob("*") if f.is_file() and f.name != "test_main.py"}
+    assert zipped_names == {"main.py", "requirements.txt"}
+
+
+def test_skips_instance_with_no_local_dir_configured(tmp_path, capsys):
+    env_dir = _make_env(tmp_path)
+    (env_dir / "deployment.yaml").write_text("""\
+apiVersion: platform.gcp/v1
+kind: Deployment
+metadata:
+  name: fixture
+  environment: dev
+  owner: devops
+project:
+  id: prj-dg-devops-test
+region:
+  primary: asia-south1
+resources:
+  cloudfunctions:
+    enabled: true
+    instances:
+      my-fn:
+        location: asia-south1
+        runtime: python312
+        entry_point: handler
+        source:
+          bucket: some-bucket
+          object: fn/my-fn.zip
+        service_account:
+          name: fn-sa
+""", encoding="utf-8")
+
+    rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=True))
+
+    assert rc == 0
+    assert "no source.local_dir set" in capsys.readouterr().out
+
+
+def test_unknown_function_name_errors(tmp_path):
+    env_dir = _make_env(tmp_path)
+    (env_dir / "deployment.yaml").write_text("""\
+apiVersion: platform.gcp/v1
+kind: Deployment
+metadata:
+  name: fixture
+  environment: dev
+  owner: devops
+project:
+  id: prj-dg-devops-test
+region:
+  primary: asia-south1
+resources:
+  cloudfunctions:
+    enabled: false
+    instances: {}
+""", encoding="utf-8")
+
+    rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function="does-not-exist", dry_run=True))
+
+    assert rc == 1

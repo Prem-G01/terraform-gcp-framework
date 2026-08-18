@@ -168,6 +168,65 @@ def _write_override_audit(out_path: Path, env_dir: Path, reason: str, forced) ->
     print(f"Audit record appended to {audit_path}")
 
 
+def cmd_build_function_source(args: argparse.Namespace) -> int:
+    """Zips a cloudfunctions instance's local source directory and uploads
+    it to exactly the bucket/object its deployment.yaml `source:` block
+    names — so `terraform apply` deploys the same artifact this command
+    just built, with no separate place to keep the two in sync. See
+    docs/modules.md "Building and uploading Cloud Function source".
+
+    Deliberately shells out to `gcloud storage cp` rather than adding
+    google-cloud-storage as a Python dependency — this repo's toolchain
+    already requires gcloud for everything else (bootstrap, deploy)."""
+    import subprocess
+    import zipfile
+    import tempfile
+
+    env_dir = Path(args.env_dir)
+    deployment = config_loader.load_deployment(env_dir, env_dir.parent.parent)
+    instances = deployment.instances("cloudfunctions")
+
+    targets = [args.function] if args.function else list(instances)
+    if not targets:
+        print("No cloudfunctions instances configured — nothing to build.")
+        return 0
+
+    for name in targets:
+        instance = instances.get(name)
+        if instance is None:
+            print(f"Unknown cloudfunctions instance: {name!r} (have: {', '.join(instances) or 'none'})")
+            return 1
+
+        source = instance.get("source", {})
+        local_dir = source.get("local_dir")
+        bucket = source.get("bucket")
+        object_name = source.get("object")
+        if not local_dir:
+            print(f"{name}: no source.local_dir set in deployment.yaml — nothing to build, skipping.")
+            continue
+
+        source_path = Path(local_dir)
+        if not source_path.is_dir():
+            print(f"{name}: local source dir not found: {source_path}")
+            return 1
+
+        with tempfile.TemporaryDirectory() as tmp:
+            zip_path = Path(tmp) / "source.zip"
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for f in sorted(source_path.rglob("*")):
+                    if f.is_file() and f.name != "test_main.py" and "__pycache__" not in f.parts:
+                        zf.write(f, f.relative_to(source_path))
+
+            dest = f"gs://{bucket}/{object_name}"
+            print(f"{name}: uploading {source_path} -> {dest}")
+            if args.dry_run:
+                print(f"{name}: --dry-run, not actually uploading. Zip built at {zip_path} (deleted on exit).")
+                continue
+            subprocess.run(["gcloud", "storage", "cp", str(zip_path), dest], check=True)
+
+    return 0
+
+
 def cmd_hardcode_scan(args: argparse.Namespace) -> int:
     from engine import hardcode_scanner
 
@@ -205,6 +264,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_render.add_argument("--reason", help="Required with --force-security: why this override is deliberate and safe.")
     p_render.set_defaults(func=cmd_render)
+
+    p_build_fn = sub.add_parser("build-function-source", help="Zip + upload a cloudfunctions instance's local source to its configured bucket/object")
+    p_build_fn.add_argument("env_dir", help="e.g. config/environments/dev")
+    p_build_fn.add_argument("--function", help="Instance name under resources.cloudfunctions.instances (default: all of them)")
+    p_build_fn.add_argument("--dry-run", action="store_true", help="Build the zip but don't upload")
+    p_build_fn.set_defaults(func=cmd_build_function_source)
 
     p_scan = sub.add_parser("hardcode-scan", help="Scan modules/platform/bootstrap for hardcoded values")
     p_scan.add_argument("repo_root", nargs="?", default=".")

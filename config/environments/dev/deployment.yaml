@@ -624,19 +624,22 @@ resources:
             min_node_count: 1
             max_node_count: 3
 
-  # Left disabled: source.object below (functions/process-upload.zip) does
-  # not exist in the bucket — a real terraform apply on 2026-08-18 failed
-  # with a 404 for exactly that reason. Cloud Functions needs real,
-  # already-uploaded source code; upload a real zip to that bucket path
-  # (or point source at one that exists) before flipping this to true.
+  # Real source now exists at functions/process-upload/ (HTTP-triggered —
+  # modules/compute/cloudfunctions doesn't support event triggers yet, see
+  # docs/modules.md). Before applying, upload it:
+  #   python -m engine.cli build-function-source config/environments/dev
+  # which zips source.local_dir and uploads it to exactly source.bucket/
+  # source.object below, so Terraform deploys the same artifact.
+  # cicd/cloudbuild-apply.yaml runs this automatically before `apply`.
   cloudfunctions:
-    enabled: false
+    enabled: true
     instances:
       process-upload:
         location: "{region}"
         runtime: python312
         entry_point: process_upload
         source:
+          local_dir: functions/process-upload
           bucket: "{project_id}-{environment}-app-storage"
           object: functions/process-upload.zip
         service_account:

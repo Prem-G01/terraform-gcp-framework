@@ -64,6 +64,39 @@ modules/
                                           docs/security.md before enabling
 ```
 
+## Building and uploading Cloud Function source
+
+`modules/compute/cloudfunctions` deploys from a pre-uploaded
+`source.bucket`/`source.object` — it deliberately doesn't zip or upload
+anything itself (packaging is a CI concern, not a Terraform module's job).
+Real, working source now lives at `functions/<instance-name>/` (currently
+just `functions/process-upload/` — a real HTTP-triggered `functions
+-framework` app with its own unit tests, `functions/process-upload/
+test_main.py`, that run with no GCP credentials). Build and upload it with:
+
+```bash
+python -m engine.cli build-function-source config/environments/dev
+# or just one function:
+python -m engine.cli build-function-source config/environments/dev --function process-upload
+# to see what would happen without touching GCS:
+python -m engine.cli build-function-source config/environments/dev --dry-run
+```
+
+This zips `resources.cloudfunctions.instances.<name>.source.local_dir`
+(excluding `test_main.py` and `__pycache__/`) and uploads it via `gcloud
+storage cp` to exactly the `source.bucket`/`source.object` that same
+instance declares — so `terraform apply` always deploys the artifact this
+command most recently built, with no separate place for the two to drift
+apart. `cicd/cloudbuild-apply.yaml` runs this automatically before
+`apply`; a cloudfunctions instance with no `source.local_dir` set is
+skipped (assumed to be built/uploaded by some other process).
+
+**Known limitation**: the module only deploys HTTP-triggered functions —
+there's no `event_trigger` block yet for a native Cloud Storage/Pub/Sub
+trigger. `functions/process-upload/main.py` is written to accept the same
+JSON shape a Storage notification carries, called directly via HTTP,
+rather than being natively wired to a Storage "object finalized" event.
+
 ## Alert policy aligners
 
 `modules/monitoring/alert_policies` lets each instance set its own

@@ -3,10 +3,12 @@
 ## What's actually run (and passing, as of this rebuild)
 
 ```bash
-pytest tests/ -v                          # 14 passed
-terraform fmt -check -recursive .          # clean
-python -m engine.cli validate-all config   # dev/sit/uat/prod all PASS
-python -m engine.cli hardcode-scan .       # 0 findings
+pytest tests/ -v                                    # 25 passed
+pytest functions/process-upload/test_main.py -v     # 3 passed, no GCP call
+terraform fmt -check -recursive .                    # clean
+python -m engine.cli validate-all config             # dev/sit/uat/prod all PASS
+python -m engine.cli hardcode-scan .                 # 0 findings
+python -m engine.cli build-function-source config/environments/dev --dry-run
 cd environments/dev && terraform init -backend=false && terraform validate  # Success
 cd environments/dev && terraform plan      # (with a real backend configured) 99 to add, 0 errors
 ```
@@ -41,6 +43,10 @@ approved region too.
 | `test_real_modules_have_no_hardcoded_project_ids_or_cidrs` | `modules/`, `platform/`, `bootstrap/` are clean per the hardcode scanner |
 | `test_scanner_catches_an_injected_hardcoded_project_id` | the scanner actually detects a planted violation |
 | `test_scanner_respects_allow_marker` | `# hardcode-allow:` suppression works |
+| `test_interpolate_replaces_known_tokens` / `..._resolves_tokens_to_real_values` | `{project_id}`/`{region}`/`{environment}`/`{owner}` interpolation (see `docs/configuration.md`) |
+| `test_force_security_bypasses_a_security_only_error` / `..._refuses_when_non_security_errors_present` | the `--force-security` break-glass override (see `docs/validation.md`) |
+| `test_dry_run_builds_zip_from_local_dir_without_uploading` | `build-function-source` zips the right files and excludes `test_main.py` |
+| `functions/process-upload/test_main.py` (separate suite, not under `tests/`) | the actual Cloud Function handler logic — valid/invalid payloads, no GCP call |
 
 Run `pytest tests/ -v` — no GCP credentials, no network access, and no
 `.tfstate` required; the whole suite runs in well under a second because

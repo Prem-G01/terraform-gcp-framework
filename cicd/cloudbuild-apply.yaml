@@ -42,6 +42,22 @@ steps:
           --out "environments/${_ENV}/.generated/deployment.normalized.json"
     waitFor: ["validate"]
 
+  # Uploads every cloudfunctions instance's local source (see
+  # functions/<name>/) to the exact bucket/object its deployment.yaml
+  # names, so `apply` deploys the same artifact this step just built —
+  # see docs/modules.md "Building and uploading Cloud Function source".
+  # A no-op if the environment has no cloudfunctions instances configured.
+  - id: build-function-source
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        pip install -q -r engine/requirements.txt
+        python -m engine.cli build-function-source "config/environments/${_ENV}"
+    waitFor: ["validate"]
+
   - id: apply
     name: hashicorp/terraform:1.9
     entrypoint: sh
@@ -57,7 +73,7 @@ steps:
         terraform plan -input=false -out=tfplan
         terraform apply -input=false -auto-approve tfplan
         terraform output -json > apply_outputs.json
-    waitFor: ["render"]
+    waitFor: ["render", "build-function-source"]
 
   - id: upload-artifacts
     name: gcr.io/cloud-builders/gsutil

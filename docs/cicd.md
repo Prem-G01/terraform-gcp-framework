@@ -16,8 +16,14 @@ merge to main
 cicd/cloudbuild-apply.yaml   (tf-apply SA — gated by the trigger's
                                --require-approval, a human must click
                                Approve in the Cloud Build console)
-  validate → render → apply → upload apply_outputs.json/validation.json
+  validate → render → build-function-source → apply → upload apply_outputs.json/validation.json
 ```
+
+`build-function-source` (see `docs/modules.md` "Building and uploading
+Cloud Function source") zips and uploads every configured Cloud Function's
+local source before `apply` runs, so Terraform always deploys the artifact
+this same pipeline run just built — never a stale one left over from a
+previous deploy.
 
 No developer runs `terraform apply` from a laptop against a shared
 environment — `environments/<env>/` works fine locally for `plan`

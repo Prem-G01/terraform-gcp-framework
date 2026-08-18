@@ -109,6 +109,41 @@ See `tests/test_override.py` for the enforcement (forces a security-only
 violation through with an audit record; refuses when a non-security error
 is also present; refuses without `--reason`).
 
+## Secret scanning
+
+`python -m engine.cli secret-scan .` — separate from `hardcode-scan`
+(which looks for environment-specific *values* like project IDs that
+belong in config, not code) and separate from the deployment validation
+pipeline above (which only looks at `deployment.yaml`). This scans the
+**whole repository** for content that looks like an actual leaked
+credential:
+
+- PEM private key blocks (`-----BEGIN ... PRIVATE KEY-----`)
+- A GCP service-account JSON key's real shape — the `private_key` field's
+  *value* starting with a PEM header, not just a field named `private_key`
+- AWS access key IDs (`AKIA[0-9A-Z]{16}`)
+- Slack tokens (`xox[baprs]-...`)
+
+Deliberately high-confidence patterns only — no generic entropy-based
+"looks secret-ish" heuristic. This repo has many legitimately-named fields
+(`password_secret:`, `secret_id:`, `existing_access_policy_id:`) that
+reference or describe a secret without containing one; a looser heuristic
+would drown in false positives on exactly those. See
+`engine/secret_scanner.py`'s own docstring, and the regression test
+`tests/test_secret_scanner.py::test_scanner_does_not_flag_its_own_source`
+— an earlier version of this scanner matched on the field name
+`"private_key"` alone and flagged its own pattern-definition source code.
+
+Same `# secret-allow: <reason>` suppression convention as
+`hardcode_scanner.py`. Runs in both `cicd/cloudbuild-plan.yaml` and
+`cloudbuild-apply.yaml`, independently, so a secret introduced between a
+reviewed plan and the later apply is still caught.
+
+**If this ever finds something real**: treat the credential as
+compromised the instant it's committed — rotate/revoke it — before
+worrying about removing it from git history. Deleting the file doesn't
+undo the leak; the old commit still has it.
+
 ## Cost validation — an honest limitation
 
 `engine/cost_engine.py` estimates monthly spend from a **static**

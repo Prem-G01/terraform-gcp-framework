@@ -241,6 +241,20 @@ def cmd_hardcode_scan(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_secret_scan(args: argparse.Namespace) -> int:
+    from engine import secret_scanner
+
+    findings = secret_scanner.scan(Path(args.repo_root))
+    if not findings:
+        print("SECRET SCAN: no PEM keys, GCP service-account key files, AWS access keys, or Slack tokens found")
+        return 0
+    for f in findings:
+        print(f.render())
+        print()
+    print(f"{len(findings)} suspected secret(s) found. Treat every one as compromised — revoke, don't just delete.")
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="platform-cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -274,6 +288,10 @@ def main(argv: list[str] | None = None) -> int:
     p_scan = sub.add_parser("hardcode-scan", help="Scan modules/platform/bootstrap for hardcoded values")
     p_scan.add_argument("repo_root", nargs="?", default=".")
     p_scan.set_defaults(func=cmd_hardcode_scan)
+
+    p_secret_scan = sub.add_parser("secret-scan", help="Scan the whole repo for PEM keys, GCP SA key files, AWS keys, Slack tokens")
+    p_secret_scan.add_argument("repo_root", nargs="?", default=".")
+    p_secret_scan.set_defaults(func=cmd_secret_scan)
 
     args = parser.parse_args(argv)
     if args.command == "render" and args.force_security and not args.reason:

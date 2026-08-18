@@ -58,6 +58,14 @@ steps:
         python -m engine.cli build-function-source "config/environments/${_ENV}"
     waitFor: ["validate"]
 
+  # Secret scan gates apply too, not just plan — a secret introduced
+  # between the reviewed plan and this run must still be caught.
+  - id: secret-scan
+    name: python:3.12-slim
+    entrypoint: bash
+    args: ["-c", "python -m engine.cli secret-scan ."]
+    waitFor: ["validate"]
+
   - id: apply
     name: hashicorp/terraform:1.9
     entrypoint: sh
@@ -73,7 +81,7 @@ steps:
         terraform plan -input=false -out=tfplan
         terraform apply -input=false -auto-approve tfplan
         terraform output -json > apply_outputs.json
-    waitFor: ["render", "build-function-source"]
+    waitFor: ["render", "build-function-source", "secret-scan"]
 
   - id: upload-artifacts
     name: gcr.io/cloud-builders/gsutil

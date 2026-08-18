@@ -52,6 +52,15 @@ steps:
     args: ["-c", "python -m engine.cli hardcode-scan ."]
     waitFor: ["validate"]
 
+  # 3b. Secret scan — the whole repo, not just modules/. PEM keys, GCP
+  #     service-account key files, AWS access keys, Slack tokens. Treat any
+  #     hit as a real incident (rotate the credential), not a lint issue.
+  - id: secret-scan
+    name: python:3.12-slim
+    entrypoint: bash
+    args: ["-c", "python -m engine.cli secret-scan ."]
+    waitFor: ["validate"]
+
   # 4. terraform fmt -check — style gate, not a plan-blocker for anything
   #    else, but must pass before plan runs.
   - id: fmt-check
@@ -76,7 +85,7 @@ steps:
         terraform plan -input=false -out=tfplan
         terraform show -no-color tfplan > plan.txt
         terraform show -json tfplan > plan.json
-    waitFor: ["fmt-check", "hardcode-scan"]
+    waitFor: ["fmt-check", "hardcode-scan", "secret-scan"]
 
   # 6. Upload plan + validation report as artifacts — never applied
   #    automatically from this pipeline (see cloudbuild-apply.yaml).

@@ -7,7 +7,7 @@ git push / PR
       │
       ▼
 cicd/cloudbuild-plan.yaml   (tf-plan SA, read-only)
-  validate → render → hardcode-scan → fmt-check → plan → upload plan.txt/plan.json/validation.json
+  validate → render → hardcode-scan + secret-scan → fmt-check → plan → upload plan.txt/plan.json/validation.json
       │
       ▼  (human reviews the plan in the PR / Cloud Build UI)
 merge to main
@@ -16,8 +16,12 @@ merge to main
 cicd/cloudbuild-apply.yaml   (tf-apply SA — gated by the trigger's
                                --require-approval, a human must click
                                Approve in the Cloud Build console)
-  validate → render → build-function-source → apply → upload apply_outputs.json/validation.json
+  validate → render → build-function-source + secret-scan → apply → upload apply_outputs.json/validation.json
 ```
+
+`secret-scan` (see `docs/validation.md` "Secret scanning") runs in both
+pipelines, independently — a secret introduced between the reviewed plan
+and the later apply must still be caught, not just checked once.
 
 `build-function-source` (see `docs/modules.md` "Building and uploading
 Cloud Function source") zips and uploads every configured Cloud Function's

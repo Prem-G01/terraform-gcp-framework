@@ -100,6 +100,10 @@ class Deployment:
         return self.raw.get("metadata", {}).get("environment", "")
 
     @property
+    def region(self) -> str:
+        return self.raw.get("region", {}).get("primary", "")
+
+    @property
     def resources(self) -> dict:
         return self.normalized.get("resources", {})
 

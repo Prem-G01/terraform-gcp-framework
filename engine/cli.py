@@ -4,10 +4,17 @@
     python -m engine.cli validate config/environments/dev --json
     python -m engine.cli hardcode-scan .
     python -m engine.cli validate-all config
+    python -m engine.cli cost-check-live config/environments/dev
 
 Exit code is 0 when nothing blocks the deployment (no ERROR-severity
 findings), 1 otherwise — this is the gate CI/CD checks (see
 .github/workflows/plan.yml "Validate" step and docs/cicd.md).
+
+`cost-check-live` is the one exception to everything above: it makes real
+Cloud Billing Catalog API calls (needs `pip install -r engine/requirements
+-live-cost.txt` and Application Default Credentials) and is never run from
+`validate`/`render`/CI — see engine/live_cost.py and docs/validation.md
+"Cost validation".
 """
 
 from __future__ import annotations
@@ -241,6 +248,77 @@ def cmd_hardcode_scan(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_cost_check_live(args: argparse.Namespace) -> int:
+    """The one command in engine/ that makes real GCP API calls — see
+    engine/live_cost.py's module docstring for why this is deliberately
+    separate from `validate`/`render`, and for the honest scope limits
+    (only *-standard-N Compute Engine shapes get a live rate; shared-core
+    VMs and every Cloud SQL tier stay static-only).
+    """
+    from engine import cost_engine, live_cost
+
+    env_dir = Path(args.env_dir)
+    config_root = env_dir.parent.parent
+    deployment = config_loader.load_deployment(env_dir, config_root)
+    region = deployment.region
+
+    try:
+        token = live_cost.get_access_token()
+    except live_cost.LiveCostError as exc:
+        print(f"COST CHECK (live): could not authenticate — {exc}")
+        return 1
+
+    cost_config = cost_engine.load_cost_config(config_root)
+    static_vm_rates = cost_config.get("machine_type_hourly_usd", {})
+    static_sql_rates = cost_config.get("cloudsql_tier_hourly_usd", {})
+    threshold = cost_config.get("thresholds", {}).get("monthly_usd_warning", {}).get(deployment.environment)
+
+    skus_cache: dict[str, list[dict]] = {}
+    total_monthly = 0.0
+    print(f"COST CHECK (live): {deployment.environment} / {region}\n")
+
+    if "vm" in deployment.enabled_resource_types():
+        for name, vm in deployment.instances("vm").items():
+            machine_type = vm.get("machine_type", "")
+            try:
+                rate = live_cost.estimate_live_vm_hourly_rate(token, machine_type, region, skus_cache)
+                monthly = rate.hourly_usd * cost_engine.HOURS_PER_MONTH
+                static = static_vm_rates.get(machine_type)
+                drift = ""
+                if static is not None and static > 0:
+                    pct = (rate.hourly_usd - static) / static * 100
+                    if abs(pct) >= 15:
+                        drift = f"  [static table says ${static:.4f}/hr — {pct:+.0f}% off, consider updating config/global/cost.yaml]"
+                print(f"  vm.{name} ({machine_type}): LIVE ${rate.hourly_usd:.4f}/hr (${monthly:,.2f}/mo){drift}")
+                total_monthly += monthly
+            except live_cost.LiveCostError as exc:
+                static = static_vm_rates.get(machine_type)
+                if static is not None:
+                    monthly = static * cost_engine.HOURS_PER_MONTH
+                    print(f"  vm.{name} ({machine_type}): static ${static:.4f}/hr (${monthly:,.2f}/mo) — live unavailable: {exc}")
+                    total_monthly += monthly
+                else:
+                    print(f"  vm.{name} ({machine_type}): NO RATE AVAILABLE (live and static both — {exc})")
+
+    if "cloudsql" in deployment.enabled_resource_types():
+        for name, sql in deployment.instances("cloudsql").items():
+            tier = sql.get("tier", "")
+            static = static_sql_rates.get(tier)
+            if static is not None:
+                monthly = static * cost_engine.HOURS_PER_MONTH
+                print(f"  cloudsql.{name} ({tier}): static ${static:.4f}/hr (${monthly:,.2f}/mo) — live Cloud SQL pricing not yet supported")
+                total_monthly += monthly
+            else:
+                print(f"  cloudsql.{name} ({tier}): NO RATE AVAILABLE (not in config/global/cost.yaml, live unsupported)")
+
+    print(f"\nEstimated total: ${total_monthly:,.2f}/mo")
+    if threshold is not None:
+        verdict = "OVER" if total_monthly > threshold else "within"
+        print(f"{deployment.environment} threshold: ${threshold:,.2f}/mo — {verdict} budget")
+
+    return 0
+
+
 def cmd_secret_scan(args: argparse.Namespace) -> int:
     from engine import secret_scanner
 
@@ -292,6 +370,13 @@ def main(argv: list[str] | None = None) -> int:
     p_secret_scan = sub.add_parser("secret-scan", help="Scan the whole repo for PEM keys, GCP SA key files, AWS keys, Slack tokens")
     p_secret_scan.add_argument("repo_root", nargs="?", default=".")
     p_secret_scan.set_defaults(func=cmd_secret_scan)
+
+    p_cost_live = sub.add_parser(
+        "cost-check-live",
+        help="Real Cloud Billing Catalog lookup for *-standard-N VM shapes (needs ADC credentials + network — see engine/live_cost.py)",
+    )
+    p_cost_live.add_argument("env_dir", help="e.g. config/environments/dev")
+    p_cost_live.set_defaults(func=cmd_cost_check_live)
 
     args = parser.parse_args(argv)
     if args.command == "render" and args.force_security and not args.reason:

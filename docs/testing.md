@@ -3,7 +3,7 @@
 ## What's actually run (and passing, as of this rebuild)
 
 ```bash
-pytest tests/ -v                                    # 35 passed
+pytest tests/ -v                                    # 44 passed
 pytest functions/process-upload/test_main.py -v     # 3 passed, no GCP call
 terraform fmt -check -recursive .                    # clean
 python -m engine.cli validate-all config             # dev/sit/uat/prod all PASS
@@ -15,6 +15,15 @@ cd environments/dev && terraform plan      # (with a real backend configured) 99
 cd platform && terraform test                                # 5 passed, mock_provider, no GCP call
 cd modules/database/cloudsql && terraform test                # 2 passed, mock_provider, no GCP call
 cd modules/security/workload_identity && terraform test       # 2 passed, mock_provider, no GCP call
+
+# Live Cloud Billing check — the one command anywhere in this repo that
+# makes a real GCP API call. Not part of the suite above on purpose.
+pip install -r engine/requirements-live-cost.txt
+python -m engine.cli cost-check-live config/environments/dev
+# Actually run against the real prj-dg-devops-test project while writing
+# this feature: e2-medium correctly fell back to the static table (shared-
+# core, not live-priced), db-custom-2-4096 correctly stayed static (Cloud
+# SQL unsupported), total $99.28/mo, within the $300/mo dev threshold.
 ```
 
 The `terraform plan` above was run twice, manually, against the real
@@ -50,6 +59,7 @@ approved region too.
 | `test_interpolate_replaces_known_tokens` / `..._resolves_tokens_to_real_values` | `{project_id}`/`{region}`/`{environment}`/`{owner}` interpolation (see `docs/configuration.md`) |
 | `test_force_security_bypasses_a_security_only_error` / `..._refuses_when_non_security_errors_present` | the `--force-security` break-glass override (see `docs/validation.md`) |
 | `test_dry_run_builds_zip_from_local_dir_without_uploading` | `build-function-source` zips the right files and excludes `test_main.py` |
+| `test_live_cost.py` (9 tests) | `engine/live_cost.py`'s shape parsing (`e2-standard-4` accepted, `e2-medium`/custom/unknown rejected), SKU-matching (region match, excludes Custom/Preemptible/Sole-Tenancy variants), and the core+RAM price formula — all with synthetic SKU data, no real API call (see "Live cost check" below) |
 | `functions/process-upload/test_main.py` (separate suite, not under `tests/`) | the actual Cloud Function handler logic — valid/invalid payloads, no GCP call |
 
 Run `pytest tests/ -v` — no GCP credentials, no network access, and no
@@ -103,6 +113,21 @@ through a mocked `modules/iam/service_accounts` — same reasoning as the
 `cloudsql` test's hand-supplied `vpcs`/`passwords`. An explicit
 `override_resource` block is the alternative if you need the platform-
 level cross-module wiring itself under test.
+
+## Live cost check
+
+`python -m engine.cli cost-check-live <env-dir>` (`engine/live_cost.py`)
+is different from everything above: it's the one command in this repo
+that makes a real Cloud Billing Catalog API call, and it was actually run
+against the real `prj-dg-devops-test` project while building it — see
+`docs/validation.md` "Cost validation" for the real numbers that came
+back (`e2-standard-2` priced $0.0805/hr live vs. $0.0720/hr in the static
+table, a real ~12% drift caught by comparing the two). `tests
+/test_live_cost.py` covers its pure logic offline; the live-API path
+itself has no automated test (there's nothing to assert against that
+wouldn't just be re-hardcoding a price GCP could change tomorrow) —
+running it by hand against a real project, as was done here, is the only
+verification that actually means anything for that part.
 
 ## What's not tested
 

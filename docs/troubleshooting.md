@@ -202,8 +202,13 @@ everywhere).
   project IDs — 56 and 22 resources respectively, 0 errors) but neither
   has been applied for real; the per-environment design was never live.
 - No integration test applies real infrastructure and tears it down.
-- Cost validation is a static price table, not a live Cloud Billing
-  lookup (see `docs/validation.md`).
+- `validate`/`render` cost validation is still a static price table, not
+  a live lookup — deliberately, to keep those fast and credential-free
+  (see `docs/validation.md`). `python -m engine.cli cost-check-live` (new,
+  see `engine/live_cost.py`) is a real live Cloud Billing Catalog
+  integration, tested for real against `asia-south1` while building it —
+  but scoped to Compute Engine `*-standard-N` shapes only; shared-core
+  VMs and all of Cloud SQL still fall back to the static table.
 - `sit`, `uat`, and `prod` `deployment.yaml` are templates (apis + vpc
   only) — no real workload configuration existed for them in the original
   repository, so none was fabricated here.

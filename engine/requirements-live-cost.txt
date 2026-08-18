@@ -1,0 +1,7 @@
+# Only needed for `python -m engine.cli cost-check-live` — deliberately
+# NOT in engine/requirements.txt, which every CI step and `pytest tests/`
+# installs. Keeping this separate means the fast, credential-free path
+# (validate/render/hardcode-scan/secret-scan) never pays for deps it
+# doesn't use. See engine/live_cost.py's module docstring.
+google-auth>=2.0
+requests>=2.31

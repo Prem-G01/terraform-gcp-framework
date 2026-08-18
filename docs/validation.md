@@ -144,17 +144,44 @@ compromised the instant it's committed — rotate/revoke it — before
 worrying about removing it from git history. Deleting the file doesn't
 undo the leak; the old commit still has it.
 
-## Cost validation — an honest limitation
+## Cost validation — a static estimate, plus one deliberate live exception
 
-`engine/cost_engine.py` estimates monthly spend from a **static**
-USD/hour table in `config/global/cost.yaml` for VM machine types and Cloud
-SQL tiers — not a Cloud Billing Catalog API call. There is no live pricing
-lookup anywhere in this engine. Treat its `COST_THRESHOLD_EXCEEDED`
-warning as a rough guardrail, not a forecast. A real integration would call
-`cloudbilling.googleapis.com`'s Catalog API per SKU, which needs network
-access and billing-account read permission the validation engine
-deliberately doesn't have (it makes zero GCP API calls, by design — that's
-what makes `pytest tests/` run in under a second with no credentials).
+`engine/cost_engine.py` (run automatically by `validate`/`render`,
+including in CI) estimates monthly spend from a **static** USD/hour table
+in `config/global/cost.yaml` for VM machine types and Cloud SQL tiers —
+not a live API call. Treat its `COST_THRESHOLD_EXCEEDED` warning as a
+rough guardrail, not a forecast. This stays static on purpose: the
+validation engine makes zero GCP API calls by design, which is what
+makes `pytest tests/` run in under a second with no credentials, and
+every `validate`/`render` call in CI fast and independent of network
+reachability.
+
+**`python -m engine.cli cost-check-live <env-dir>`** (`engine/live_cost.py`)
+is the one deliberate exception — a real Cloud Billing Catalog API call,
+never run from `validate`/`render`/CI, needing its own separate
+`pip install -r engine/requirements-live-cost.txt` and Application
+Default Credentials (`gcloud auth application-default login`). Run it by
+hand when you actually want current pricing, not on every plan. Honest
+about its own limits rather than pretending to cover everything:
+
+- Only Compute Engine `*-standard-N` shapes (`e2-standard-4`,
+  `n2-standard-16`, ...) get a real live rate, computed from GCP's own
+  per-region Core + RAM component SKUs (`vcpus × core_rate + (vcpus × 4
+  GB) × ram_rate`) — verified against the real Catalog API for
+  `asia-south1` while building this (an `e2-standard-2` there priced at
+  $0.0805/hr live vs. $0.0720/hr in the static table, an ~12% gap; static
+  tables drift, this is exactly the kind of thing a live check is for).
+- Shared-core shapes (`e2-micro`, `e2-small`, `e2-medium`) and custom
+  machine types fall back to the static table — their billing model
+  (fractional vCPU billing) doesn't map onto the two-SKU formula above,
+  and a wrong live number would be worse than an honestly-static one.
+- Cloud SQL is static-only, full stop — its SKU shape is
+  edition/tier-specific rather than a uniform core+RAM split, and wiring
+  that up correctly was out of scope for this pass.
+- It prices whatever shape you ask for, not whether GCP actually offers
+  that exact size (`e2-standard-99` prices cleanly even though no such
+  real machine type exists) — that's Compute Engine's problem at
+  `terraform apply` time, not this tool's.
 
 ## Extending a rule
 

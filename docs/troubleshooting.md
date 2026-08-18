@@ -106,13 +106,28 @@ made up:**
 3. **GKE node unhealthy** — the cluster itself was created, but its node
    never went healthy: the CNI plugin never initialized, and the node
    timed out pulling the base `pause` image from the regional Artifact
-   Registry mirror. This looks like a real egress-routing gap for
-   private-node GKE reaching `gcr.io`/`pkg.dev` through this VPC's Cloud
-   NAT — **not root-caused**, flagged with a comment on the `gke` block in
-   `deployment.yaml`. If you hit this again: check whether Private Google
-   Access / Cloud NAT actually covers the container registry endpoints
-   this GKE version pulls from, and whether the private cluster's DNS
-   resolution for regional Artifact Registry mirrors is working at all.
+   Registry mirror.
+
+   **Likely root cause found afterward, not yet re-verified against a live
+   cluster**: `modules/networking/vpc` sets `delete_default_routes_on_create`
+   from config, and `dev-vpc`'s config has it `true` — this deletes the
+   VPC's `0.0.0.0/0` route to the default internet gateway. **Cloud NAT
+   does not create that route itself** — NAT only translates traffic that's
+   already being routed to the internet gateway; delete the default route
+   and never replace it, and NAT is fully configured but has nothing to
+   attach to. Every private-IP-only resource in the VPC (the GKE node
+   included) would have had zero path to the internet, which fully
+   explains a registry-pull timeout. Fixed by adding
+   `google_compute_route.default_internet_gateway` to
+   `modules/networking/vpc/main.tf` — created automatically whenever
+   `delete_default_routes_on_create` is true, opt out per-VPC with
+   `create_default_internet_route: false`. Verified this plans cleanly
+   (read-only, against the real project) but **the fix has not yet been
+   proven against a real GKE node** — that requires actually redeploying
+   GKE, a real cost/time decision left to whoever does that next. If a
+   node is still unhealthy after this fix, the earlier hypotheses (Private
+   Google Access coverage, regional Artifact Registry DNS resolution)
+   are the next things to check.
 
 **The teardown — deletion_protection interacts with destroy in ways worth
 knowing before you hit them:**

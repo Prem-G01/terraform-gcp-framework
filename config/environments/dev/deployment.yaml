@@ -506,6 +506,45 @@ resources:
         threshold: 0.8
         duration: 300s
         comparison: COMPARISON_GT
+      gke-node-cpu:
+        display_name: GKE Node CPU Usage
+        filter: >
+          metric.type="kubernetes.io/node/cpu/allocatable_utilization"
+          resource.type="k8s_node"
+        threshold: 0.8
+        duration: 300s
+        comparison: COMPARISON_GT
+        # aligner omitted -> defaults to ALIGN_MEAN, correct for this
+        # GAUGE-type utilization-ratio metric (same shape as vm-cpu above).
+      memorystore-memory-usage:
+        display_name: Memorystore Memory Usage
+        filter: >
+          metric.type="redis.googleapis.com/stats/memory/usage_ratio"
+          resource.type="redis_instance"
+        threshold: 0.8
+        duration: 300s
+        comparison: COMPARISON_GT
+        # aligner omitted -> ALIGN_MEAN, correct: also a GAUGE ratio metric.
+      cloudfunctions-errors:
+        display_name: Cloud Function Execution Errors
+        filter: >
+          metric.type="cloudfunctions.googleapis.com/function/execution_count"
+          resource.type="cloud_function"
+          metric.label."status"!="ok"
+        threshold: 0
+        duration: 300s
+        comparison: COMPARISON_GT
+        # execution_count is a CUMULATIVE counter, not a gauge — ALIGN_RATE
+        # converts it to an error rate; ALIGN_MEAN would be meaningless here.
+        aligner: ALIGN_RATE
+
+      # NOT added: a "GKE node not ready" alert on kubernetes.io/node/
+      # status_condition. That metric is BOOL-typed and needs a specific
+      # label schema (condition/status keys, exact value casing) this
+      # session couldn't verify with confidence — see docs/modules.md
+      # "Alert policy aligners". Shipping an unverified filter would be
+      # false monitoring coverage, worse than none. Add it once verified
+      # against a real cluster's Metrics Explorer output.
 
   uptime_checks:
     enabled: true

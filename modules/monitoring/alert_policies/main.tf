@@ -42,9 +42,24 @@ resource "google_monitoring_alert_policy" "alerts" {
 
       aggregations {
 
-        alignment_period = "60s"
+        alignment_period = lookup(
+          each.value,
+          "alignment_period",
+          "60s"
+        )
 
-        per_series_aligner = "ALIGN_MEAN"
+        # ALIGN_MEAN only makes sense for a GAUGE metric (CPU/memory
+        # utilization ratios). A cumulative counter (e.g. Cloud Functions
+        # execution_count) needs ALIGN_RATE or ALIGN_DELTA; a BOOL
+        # condition metric (e.g. GKE node status_condition) needs
+        # ALIGN_FRACTION_TRUE or ALIGN_COUNT_TRUE. Get this wrong and the
+        # policy either fails to create or silently never fires — see
+        # docs/modules.md "Alert policy aligners" before adding a new one.
+        per_series_aligner = lookup(
+          each.value,
+          "aligner",
+          "ALIGN_MEAN"
+        )
 
       }
 

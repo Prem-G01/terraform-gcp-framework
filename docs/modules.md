@@ -64,6 +64,29 @@ modules/
                                           docs/security.md before enabling
 ```
 
+## Alert policy aligners
+
+`modules/monitoring/alert_policies` lets each instance set its own
+`aligner` (Cloud Monitoring `per_series_aligner`), defaulting to
+`ALIGN_MEAN` — but the right aligner depends entirely on the metric's
+**kind**, and picking wrong either fails at apply time or, worse, creates
+a policy that silently never fires:
+
+| Metric kind | Example | Correct aligner |
+|---|---|---|
+| GAUGE (a ratio/level, e.g. CPU or memory utilization) | `compute.googleapis.com/instance/cpu/utilization`, `redis.googleapis.com/stats/memory/usage_ratio` | `ALIGN_MEAN` (the default) |
+| CUMULATIVE (a counter that only increases, e.g. request/execution count) | `cloudfunctions.googleapis.com/function/execution_count` | `ALIGN_RATE` (converts to a per-second rate) or `ALIGN_DELTA` |
+| BOOL (a condition that's true/false) | `kubernetes.io/node/status_condition` | `ALIGN_FRACTION_TRUE` or `ALIGN_COUNT_TRUE` |
+
+Before adding a new alert, check the metric's kind in Cloud Monitoring's
+Metrics Explorer (or `gcloud monitoring metrics-descriptors describe
+<type>`) — don't assume. `config/environments/dev/deployment.yaml`
+deliberately does **not** include a GKE "node not ready" alert on
+`kubernetes.io/node/status_condition` — its exact label schema wasn't
+verified against a real cluster in this session, and shipping an
+unverified filter would be false monitoring coverage. Verify it for real,
+then add it.
+
 ## Bug fixed in this rebuild: Cloud SQL users were never created
 
 The original `modules/database/cloudsql/main.tf` computed a

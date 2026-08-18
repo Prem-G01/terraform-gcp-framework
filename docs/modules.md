@@ -23,6 +23,19 @@ by `engine/hardcode_scanner.py`, which scans exactly this directory; see
 `tests/test_hardcode_scanner.py::test_real_modules_have_no_hardcoded
 _project_ids_or_cidrs`).
 
+**Four modules deviate from the contract above, deliberately:**
+`security/org_policies` and `security/binary_authorization` take no
+`config` at all — every field is a scalar `var.*` (there's nothing
+per-instance to iterate; org policy constraints and the image admission
+policy are each a single project-level setting, not a named collection).
+`security/iap` and `security/workload_identity` take `config` as the
+instances map directly (`config = local.instances.iap` in
+`platform/main.tf`), not wrapped in a plural key
+(`{ iap = local.instances.iap }`) — there was no second thing to
+disambiguate from, so the extra wrapper key would have been pure
+ceremony. See each module's own `variables.tf` before assuming the
+standard shape.
+
 ## Where defaults actually get applied
 
 `config/global/defaults.yaml` `resource_defaults` is merged into each
@@ -62,6 +75,16 @@ modules/
                                           public-IP mode exposed at all
   security/vpc_service_controls/         org-level singleton policy — see
                                           docs/security.md before enabling
+  security/org_policies/                 project-level org policy constraints,
+                                          zero cross-module inputs — see docs/security.md
+  security/iap/                          IAP tunnel IAM bindings, scoped per VM —
+                                          takes vm_names/vm_zones, not the usual vpcs/subnets
+  security/workload_identity/            binds a K8s ServiceAccount to a GCP SA —
+                                          takes service_account_ids
+  security/binary_authorization/         project-wide image admission policy —
+                                          deliberately creates no attestors, see docs/security.md
+  iam/deploy_roles/                      zero-resource module, shared role lists —
+                                          not part of platform/main.tf, used by bootstrap/ instead
 ```
 
 ## Building and uploading Cloud Function source

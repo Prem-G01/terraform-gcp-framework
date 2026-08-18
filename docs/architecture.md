@@ -67,7 +67,7 @@ taken:
   turns "read the Terraform" into "read the generator that reads the
   schema that generates the Terraform," and a generated-file diff is much
   harder to review in a PR than a hand-written one for a bounded, slowly-
-  changing list of ~25 GCP resource types.
+  changing list of ~33 GCP resource types.
 - **A single generic `google_*_resource` style escape hatch** (e.g. driving
   the `google-beta` dynamic resource support). Rejected: it defeats
   `terraform plan` readability and the security/naming/dependency engines,

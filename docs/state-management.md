@@ -90,12 +90,14 @@ The spec this rebuild followed asked for layer-based state separation
 That's not implemented — each environment is one Terraform state, produced
 by one `platform/` module invocation. Two honest reasons:
 
-1. **Blast radius vs. operational cost.** This platform's dev footprint is
-   ~80 resources across 25 types. Splitting that into 7 states means 7
-   `terraform init`s, 7 sets of cross-state `terraform_remote_state` data
-   sources, and 7 places a plan can go stale relative to its dependencies
-   — a real cost that only pays for itself once a single state's blast
-   radius or plan time becomes a genuine operational problem.
+1. **Blast radius vs. operational cost.** This platform's dev footprint
+   has every resource type enabled except the deliberately-off
+   `vpc_service_controls` (32 of 33). Splitting that into 7 states means
+   7 `terraform init`s, 7 sets of cross-state `terraform_remote_state`
+   data sources, and 7 places a plan can go stale relative to its
+   dependencies — a real cost that only pays for itself once a single
+   state's blast radius or plan time becomes a genuine operational
+   problem.
 2. **This rebuild was not applied against real infrastructure**, so there
    was no live state to observe actually being slow or risky to plan as
    one unit — splitting preemptively, without that evidence, is exactly

@@ -2,7 +2,7 @@
 
 A YAML-driven, validated, centrally-executed Terraform platform for Google
 Cloud. One engineer-facing input — `config/environments/<env>/deployment.yaml`
-— drives 29 resource types across a reusable module set, gated by a
+— drives 33 resource types across a reusable module set, gated by a
 validation engine that runs before Terraform ever sees the config.
 
 ## What this is

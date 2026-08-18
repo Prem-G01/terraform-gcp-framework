@@ -67,3 +67,19 @@ output "memorystore_hosts" {
 output "vpc_service_controls_perimeters" {
   value = try(module.vpc_service_controls[0].perimeter_names, {})
 }
+
+output "org_policies_enforced" {
+  value = try(module.org_policies[0].enforced_constraints, [])
+}
+
+output "iap_bindings" {
+  value = try(module.iap[0].bindings, {})
+}
+
+output "workload_identity_bindings" {
+  value = try(module.workload_identity[0].bindings, {})
+}
+
+output "binary_authorization_evaluation_mode" {
+  value = try(module.binary_authorization[0].evaluation_mode, null)
+}

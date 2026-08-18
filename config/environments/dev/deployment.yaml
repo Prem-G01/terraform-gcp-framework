@@ -55,6 +55,9 @@ resources:
       - cloudfunctions.googleapis.com
       - redis.googleapis.com
       - accesscontextmanager.googleapis.com
+      - orgpolicy.googleapis.com
+      - iap.googleapis.com
+      - binaryauthorization.googleapis.com
 
   vpc:
     enabled: true
@@ -182,6 +185,14 @@ resources:
         account_id: function-service-account
         display_name: Cloud Function Service Account
         description: Service Account for Cloud Functions
+        roles:
+          - roles/logging.logWriter
+          - roles/monitoring.metricWriter
+          - roles/secretmanager.secretAccessor
+      app-workload-sa:
+        account_id: app-workload-service-account
+        display_name: App Workload Service Account
+        description: Scoped identity a pod in app-cluster assumes via Workload Identity — never the node pool's own gke-node-sa (see resources.workload_identity below).
         roles:
           - roles/logging.logWriter
           - roles/monitoring.metricWriter
@@ -677,4 +688,65 @@ resources:
     organization_id: ""
     create_access_policy: false
     existing_access_policy_id: ""
+    instances: {}
+
+  # Project-level org policy constraints — the zero-trust backstop behind
+  # the SEC_* rules in config/global/security.yaml. Unlike those rules
+  # (which only catch what's written in this file), these are enforced by
+  # GCP itself against every API call to this project, including a direct
+  # console/gcloud change that bypasses this framework's pipeline
+  # entirely. See docs/security.md "Org policy constraints". Safe to
+  # leave on in every environment — none of these fields need an
+  # org-specific value to be meaningful, unlike vpc_service_controls above.
+  org_policies:
+    enabled: true
+    disable_service_account_key_creation: true
+    restrict_vm_external_ips: true
+    restrict_public_sql_ips: true
+    require_os_login: true
+    skip_default_network_creation: true
+    instances: {}
+
+  # Identity-Aware Proxy tunnel access — who's allowed to open a tunnel to
+  # which VM through the allow-iap firewall rule above. Deliberately
+  # enabled with zero members: `members: []` grants nobody anything (the
+  # wiring is live and tested, but access is closed by default — add real
+  # principals, e.g. "group:platform-admins@yourdomain.com" or
+  # "user:name@yourdomain.com", before anyone actually needs to connect).
+  # See docs/security.md "Identity-Aware Proxy".
+  iap:
+    enabled: true
+    instances:
+      admin-access:
+        target_vm: app-vm-01
+        members: []
+
+  # Binds app-cluster pods to app-workload-sa via GKE Workload Identity,
+  # instead of the node pool's own gke-node-sa — see docs/security.md
+  # "GKE Workload Identity". k8s_namespace/k8s_service_account name
+  # Kubernetes-side objects this platform doesn't create (it provisions
+  # cluster infrastructure, not application manifests) — create a
+  # matching ServiceAccount in that namespace, annotated with
+  # iam.gke.io/gcp-service-account, when you deploy the actual workload.
+  workload_identity:
+    enabled: true
+    instances:
+      app-workload:
+        gcp_service_account: app-workload-sa
+        k8s_namespace: default
+        k8s_service_account: app-ksa
+
+  # Project-wide image admission policy for GKE (app-cluster opts in via
+  # its own binary_authorization block, wired automatically whenever this
+  # is enabled — see modules/compute/gke/main.tf). ALWAYS_DENY is the
+  # secure-by-default starting point: it blocks every image until you
+  # either set up real attestors and switch to REQUIRE_ATTESTATION, or
+  # deliberately choose ALWAYS_ALLOW. See docs/security.md "Binary
+  # Authorization" before assuming any image can deploy to app-cluster.
+  binary_authorization:
+    enabled: true
+    evaluation_mode: ALWAYS_DENY
+    require_attestations_by: []
+    enforcement_mode: ENFORCED_BLOCK_AND_AUDIT_LOG
+    global_policy_evaluation_mode: ENABLE
     instances: {}

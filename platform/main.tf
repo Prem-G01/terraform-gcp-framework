@@ -255,14 +255,15 @@ module "documentai" {
 }
 
 module "gke" {
-  count            = local.enabled.gke ? 1 : 0
-  source           = "../modules/compute/gke"
-  project_id       = var.project_id
-  config           = { gke = local.instances.gke }
-  vpcs             = try(module.vpc[0].self_links, {})
-  subnets          = try(module.subnet[0].self_links, {})
-  service_accounts = try(module.service_accounts[0].emails, {})
-  depends_on       = [module.apis, module.vpc, module.subnet, module.service_accounts]
+  count                       = local.enabled.gke ? 1 : 0
+  source                      = "../modules/compute/gke"
+  project_id                  = var.project_id
+  config                      = { gke = local.instances.gke }
+  vpcs                        = try(module.vpc[0].self_links, {})
+  subnets                     = try(module.subnet[0].self_links, {})
+  service_accounts            = try(module.service_accounts[0].emails, {})
+  enable_binary_authorization = local.enabled.binary_authorization
+  depends_on                  = [module.apis, module.vpc, module.subnet, module.service_accounts]
 }
 
 module "cloudfunctions" {
@@ -292,4 +293,52 @@ module "vpc_service_controls" {
   create_access_policy      = try(local.resources.vpc_service_controls.create_access_policy, false)
   existing_access_policy_id = try(local.resources.vpc_service_controls.existing_access_policy_id, "")
   depends_on                = [module.apis]
+}
+
+# --- Zero-trust: org policy, IAP access, workload identity, binary auth ---
+
+module "org_policies" {
+  count      = local.enabled.org_policies ? 1 : 0
+  source     = "../modules/security/org_policies"
+  project_id = var.project_id
+
+  disable_service_account_key_creation = try(local.resources.org_policies.disable_service_account_key_creation, true)
+  restrict_vm_external_ips             = try(local.resources.org_policies.restrict_vm_external_ips, true)
+  restrict_public_sql_ips              = try(local.resources.org_policies.restrict_public_sql_ips, true)
+  require_os_login                     = try(local.resources.org_policies.require_os_login, true)
+  skip_default_network_creation        = try(local.resources.org_policies.skip_default_network_creation, true)
+
+  depends_on = [module.apis]
+}
+
+module "iap" {
+  count      = local.enabled.iap ? 1 : 0
+  source     = "../modules/security/iap"
+  project_id = var.project_id
+  config     = local.instances.iap
+  vm_names   = try(module.vm[0].names, {})
+  vm_zones   = try(module.vm[0].zones, {})
+  depends_on = [module.apis, module.vm]
+}
+
+module "workload_identity" {
+  count               = local.enabled.workload_identity ? 1 : 0
+  source              = "../modules/security/workload_identity"
+  project_id          = var.project_id
+  config              = local.instances.workload_identity
+  service_account_ids = try(module.service_accounts[0].ids, {})
+  depends_on          = [module.apis, module.service_accounts, module.gke]
+}
+
+module "binary_authorization" {
+  count      = local.enabled.binary_authorization ? 1 : 0
+  source     = "../modules/security/binary_authorization"
+  project_id = var.project_id
+
+  evaluation_mode               = try(local.resources.binary_authorization.evaluation_mode, "ALWAYS_DENY")
+  require_attestations_by       = try(local.resources.binary_authorization.require_attestations_by, [])
+  enforcement_mode              = try(local.resources.binary_authorization.enforcement_mode, "ENFORCED_BLOCK_AND_AUDIT_LOG")
+  global_policy_evaluation_mode = try(local.resources.binary_authorization.global_policy_evaluation_mode, "ENABLE")
+
+  depends_on = [module.apis]
 }

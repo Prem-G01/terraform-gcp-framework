@@ -42,6 +42,13 @@ resource "google_container_cluster" "cluster" {
     provider = "CALICO"
   }
 
+  dynamic "binary_authorization" {
+    for_each = var.enable_binary_authorization ? [1] : []
+    content {
+      evaluation_mode = "PROJECT_SINGLETON_POLICY_ENFORCE"
+    }
+  }
+
   deletion_protection = lookup(each.value, "deletion_protection", true)
 }
 

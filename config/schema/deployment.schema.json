@@ -4,36 +4,74 @@
   "title": "Deployment",
   "description": "Structural schema for config/environments/<env>/deployment.yaml. Enforces the envelope and the enabled/instances contract for every resource type; per-field business rules (dependencies, security, naming) are enforced by engine/*.py, not by this schema.",
   "type": "object",
-  "required": ["apiVersion", "kind", "metadata", "project", "region", "resources"],
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "project",
+    "region",
+    "resources"
+  ],
   "additionalProperties": false,
   "properties": {
-    "apiVersion": { "const": "platform.gcp/v1" },
-    "kind": { "const": "Deployment" },
+    "apiVersion": {
+      "const": "platform.gcp/v1"
+    },
+    "kind": {
+      "const": "Deployment"
+    },
     "metadata": {
       "type": "object",
-      "required": ["name", "environment"],
+      "required": [
+        "name",
+        "environment"
+      ],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
-        "environment": { "type": "string", "enum": ["dev", "sit", "uat", "prod"] },
-        "owner": { "type": "string" }
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "environment": {
+          "type": "string",
+          "enum": [
+            "dev",
+            "sit",
+            "uat",
+            "prod"
+          ]
+        },
+        "owner": {
+          "type": "string"
+        }
       }
     },
     "project": {
       "type": "object",
-      "required": ["id"],
+      "required": [
+        "id"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$" }
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+        }
       }
     },
     "region": {
       "type": "object",
-      "required": ["primary"],
+      "required": [
+        "primary"
+      ],
       "additionalProperties": false,
       "properties": {
-        "primary": { "type": "string" },
-        "secondary": { "type": "string" }
+        "primary": {
+          "type": "string"
+        },
+        "secondary": {
+          "type": "string"
+        }
       }
     },
     "resources": {
@@ -42,72 +80,256 @@
       "properties": {
         "apis": {
           "type": "object",
-          "required": ["enabled"],
+          "required": [
+            "enabled"
+          ],
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean" },
-            "services": { "type": "array", "items": { "type": "string" } }
+            "enabled": {
+              "type": "boolean"
+            },
+            "services": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         },
-        "vpc": { "$ref": "#/definitions/resourceBlock" },
-        "subnet": { "$ref": "#/definitions/resourceBlock" },
-        "firewall": { "$ref": "#/definitions/resourceBlock" },
-        "router": { "$ref": "#/definitions/resourceBlock" },
-        "nat": { "$ref": "#/definitions/resourceBlock" },
-        "private_service_access": { "$ref": "#/definitions/resourceBlock" },
-        "service_accounts": { "$ref": "#/definitions/resourceBlock" },
-        "vm": { "$ref": "#/definitions/resourceBlock" },
-        "secrets": { "$ref": "#/definitions/resourceBlock" },
-        "cloudsql": { "$ref": "#/definitions/resourceBlock" },
-        "buckets": { "$ref": "#/definitions/resourceBlock" },
-        "artifact_registry": { "$ref": "#/definitions/resourceBlock" },
-        "kms": { "$ref": "#/definitions/resourceBlock" },
-        "pubsub": { "$ref": "#/definitions/resourceBlock" },
-        "cloudtasks": { "$ref": "#/definitions/resourceBlock" },
-        "cloudrun": { "$ref": "#/definitions/resourceBlock" },
-        "load_balancer": { "$ref": "#/definitions/resourceBlock" },
-        "scheduler": { "$ref": "#/definitions/resourceBlock" },
-        "workflows": { "$ref": "#/definitions/resourceBlock" },
-        "notification_channels": { "$ref": "#/definitions/resourceBlock" },
-        "alert_policies": { "$ref": "#/definitions/resourceBlock" },
-        "uptime_checks": { "$ref": "#/definitions/resourceBlock" },
-        "logging": { "$ref": "#/definitions/resourceBlock" },
-        "bigquery": { "$ref": "#/definitions/resourceBlock" },
-        "documentai": { "$ref": "#/definitions/resourceBlock" },
-        "gke": { "$ref": "#/definitions/resourceBlock" },
-        "cloudfunctions": { "$ref": "#/definitions/resourceBlock" },
-        "memorystore": { "$ref": "#/definitions/resourceBlock" },
-        "vpc_service_controls": { "$ref": "#/definitions/vpcServiceControlsBlock" }
+        "vpc": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "subnet": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "firewall": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "router": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "nat": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "private_service_access": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "service_accounts": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "vm": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "secrets": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "cloudsql": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "buckets": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "artifact_registry": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "kms": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "pubsub": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "cloudtasks": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "cloudrun": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "load_balancer": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "scheduler": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "workflows": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "notification_channels": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "alert_policies": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "uptime_checks": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "logging": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "bigquery": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "documentai": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "gke": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "cloudfunctions": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "memorystore": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "vpc_service_controls": {
+          "$ref": "#/definitions/vpcServiceControlsBlock"
+        },
+        "org_policies": {
+          "$ref": "#/definitions/orgPoliciesBlock"
+        },
+        "iap": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "workload_identity": {
+          "$ref": "#/definitions/resourceBlock"
+        },
+        "binary_authorization": {
+          "$ref": "#/definitions/binaryAuthorizationBlock"
+        }
       }
     }
   },
   "definitions": {
     "vpcServiceControlsBlock": {
       "type": "object",
-      "description": "Like resourceBlock, plus the org-policy fields modules/security/vpc_service_controls needs — see docs/security.md before setting create_access_policy: true.",
-      "required": ["enabled", "instances"],
+      "description": "Like resourceBlock, plus the org-policy fields modules/security/vpc_service_controls needs \u2014 see docs/security.md before setting create_access_policy: true.",
+      "required": [
+        "enabled",
+        "instances"
+      ],
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean" },
+        "enabled": {
+          "type": "boolean"
+        },
         "instances": {
           "type": "object",
-          "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" }
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          }
         },
-        "organization_id": { "type": "string" },
-        "create_access_policy": { "type": "boolean" },
-        "existing_access_policy_id": { "type": "string" },
-        "policy_title": { "type": "string" }
+        "organization_id": {
+          "type": "string"
+        },
+        "create_access_policy": {
+          "type": "boolean"
+        },
+        "existing_access_policy_id": {
+          "type": "string"
+        },
+        "policy_title": {
+          "type": "string"
+        }
       }
     },
     "resourceBlock": {
       "type": "object",
-      "required": ["enabled", "instances"],
+      "required": [
+        "enabled",
+        "instances"
+      ],
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean" },
+        "enabled": {
+          "type": "boolean"
+        },
         "instances": {
           "type": "object",
-          "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" }
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          }
+        }
+      }
+    },
+    "orgPoliciesBlock": {
+      "type": "object",
+      "description": "Like resourceBlock, plus the project-level org policy toggles modules/security/org_policies needs \u2014 see docs/security.md \"Org policy constraints\".",
+      "required": [
+        "enabled",
+        "instances"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "instances": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          }
+        },
+        "disable_service_account_key_creation": {
+          "type": "boolean"
+        },
+        "restrict_vm_external_ips": {
+          "type": "boolean"
+        },
+        "restrict_public_sql_ips": {
+          "type": "boolean"
+        },
+        "require_os_login": {
+          "type": "boolean"
+        },
+        "skip_default_network_creation": {
+          "type": "boolean"
+        }
+      }
+    },
+    "binaryAuthorizationBlock": {
+      "type": "object",
+      "description": "Like resourceBlock, plus the project policy fields modules/security/binary_authorization needs \u2014 see docs/security.md \"Binary Authorization\".",
+      "required": [
+        "enabled",
+        "instances"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "instances": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          }
+        },
+        "evaluation_mode": {
+          "type": "string",
+          "enum": [
+            "ALWAYS_DENY",
+            "REQUIRE_ATTESTATION",
+            "ALWAYS_ALLOW"
+          ]
+        },
+        "require_attestations_by": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "enforcement_mode": {
+          "type": "string",
+          "enum": [
+            "ENFORCED_BLOCK_AND_AUDIT_LOG",
+            "DRYRUN_AUDIT_LOG_ONLY"
+          ]
+        },
+        "global_policy_evaluation_mode": {
+          "type": "string",
+          "enum": [
+            "ENABLE",
+            "DISABLE"
+          ]
         }
       }
     }

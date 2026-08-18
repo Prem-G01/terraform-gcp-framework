@@ -36,6 +36,8 @@ INSTANCE_REFERENCES: dict[str, list[tuple[str, str]]] = {
     "gke": [("network", "vpc"), ("subnet", "subnet"), ("node_pool.service_account", "service_accounts")],
     "cloudfunctions": [("service_account.name", "service_accounts")],
     "memorystore": [("network", "vpc")],
+    "iap": [("target_vm", "vm")],
+    "workload_identity": [("gcp_service_account", "service_accounts")],
 }
 
 

@@ -11,3 +11,10 @@ output "internal_ips" {
     k => v.network_interface[0].network_ip
   }
 }
+
+output "zones" {
+  value = {
+    for k, v in google_compute_instance.vm :
+    k => v.zone
+  }
+}

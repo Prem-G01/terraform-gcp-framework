@@ -24,6 +24,7 @@ locals {
     "workflows", "notification_channels", "alert_policies", "uptime_checks",
     "logging", "bigquery", "documentai",
     "gke", "cloudfunctions", "memorystore", "vpc_service_controls",
+    "org_policies", "iap", "workload_identity", "binary_authorization",
   ]
 
   enabled = {

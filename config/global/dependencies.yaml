@@ -44,10 +44,19 @@ dependencies:
     requires: [service_accounts]
   memorystore:
     requires: [vpc, private_service_access]
+  iap:
+    requires: [vm]
+  workload_identity:
+    requires: [gke, service_accounts]
 
 # Resource types with no entry above (apis, kms, secrets, buckets,
 # artifact_registry, pubsub, cloudtasks, notification_channels,
 # uptime_checks, logging, bigquery, documentai, service_accounts, vpc,
-# vpc_service_controls) have no hard dependency on another platform
-# resource type. vpc_service_controls is org-level policy — it restricts
-# existing resources rather than needing any of them enabled first.
+# vpc_service_controls, org_policies, binary_authorization) have no hard
+# dependency on another platform resource type. vpc_service_controls,
+# org_policies, and binary_authorization are all project-level policy —
+# they restrict existing resources rather than needing any of them
+# enabled first (binary_authorization's policy applies to GKE only once
+# modules/compute/gke's own enable_binary_authorization wiring picks it
+# up, but the *policy itself* is valid with zero other resources
+# enabled).

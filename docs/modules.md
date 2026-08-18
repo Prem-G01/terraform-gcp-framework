@@ -87,7 +87,7 @@ This zips `resources.cloudfunctions.instances.<name>.source.local_dir`
 storage cp` to exactly the `source.bucket`/`source.object` that same
 instance declares — so `terraform apply` always deploys the artifact this
 command most recently built, with no separate place for the two to drift
-apart. `cicd/cloudbuild-apply.yaml` runs this automatically before
+apart. `.github/workflows/apply.yml` runs this automatically before
 `apply`; a cloudfunctions instance with no `source.local_dir` set is
 skipped (assumed to be built/uploaded by some other process).
 

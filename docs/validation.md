@@ -101,7 +101,7 @@ Rules:
   gitignored separately from the rest of `.generated/` on purpose — treat
   it as something to review, not hide.
 - This is a CLI-level escape hatch for a human running `render` directly.
-  Neither `cicd/cloudbuild-plan.yaml` nor `cloudbuild-apply.yaml` pass
+  Neither `.github/workflows/plan.yml` nor `apply.yml` pass
   `--force-security` — a real override in CI would need its own deliberate
   decision, not a default in the pipeline.
 
@@ -135,9 +135,9 @@ would drown in false positives on exactly those. See
 `"private_key"` alone and flagged its own pattern-definition source code.
 
 Same `# secret-allow: <reason>` suppression convention as
-`hardcode_scanner.py`. Runs in both `cicd/cloudbuild-plan.yaml` and
-`cloudbuild-apply.yaml`, independently, so a secret introduced between a
-reviewed plan and the later apply is still caught.
+`hardcode_scanner.py`. Runs in both `.github/workflows/plan.yml` and
+`apply.yml`, independently, so a secret introduced between a reviewed
+plan and the later apply is still caught.
 
 **If this ever finds something real**: treat the credential as
 compromised the instant it's committed — rotate/revoke it — before

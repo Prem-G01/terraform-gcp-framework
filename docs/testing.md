@@ -97,8 +97,9 @@ realistic shape.
   or ephemeral GCP project. Doing that safely needs a disposable sandbox
   project, its own budget alert, and teardown automation — none of which
   exists here (see [docs/troubleshooting.md](troubleshooting.md)).
-- **Cloud Build pipelines**: `cicd/*.yaml` is unexercised — no build has
-  actually run it (no connected git remote/trigger in this environment).
+- **GitHub Actions pipelines**: `.github/workflows/*.yml` is unexercised —
+  no run has actually triggered it (no connected GitHub remote in this
+  environment).
 - **Most of `modules/`** still has no dedicated `.tftest.hcl` — only
   `cloudsql` does. The one real `terraform plan`/`apply` against the real
   dev config (see above) is the only cross-module exercise the other 27

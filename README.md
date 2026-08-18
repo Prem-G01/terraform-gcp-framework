@@ -49,7 +49,7 @@ bootstrap/               one-time stack: remote state bucket, artifact bucket,
                         CI/CD service accounts, optional Workload Identity
                         Federation — NOT applied by default, see docs/state-management.md
 
-cicd/                   Cloud Build pipelines (plan-on-PR, approve-then-apply)
+.github/workflows/      GitHub Actions pipelines (plan-on-PR, approve-then-apply)
 
 tests/                  pytest suite for the validation engine (proves both
                         valid and invalid config are handled correctly)
@@ -77,9 +77,9 @@ terraform init -backend-config="bucket=<state bucket>" -backend-config="prefix=d
 terraform plan
 ```
 
-In CI/CD this is exactly what `cicd/cloudbuild-plan.yaml` runs on every PR;
-`cicd/cloudbuild-apply.yaml` runs the same validate+render, then applies,
-gated by a manual approval on the Cloud Build trigger. See
+In CI/CD this is exactly what `.github/workflows/plan.yml` runs on every
+PR; `apply.yml` runs the same validate+render, then applies, gated by a
+required reviewer on the target GitHub Environment. See
 [docs/cicd.md](docs/cicd.md).
 
 ## Adding or changing infrastructure

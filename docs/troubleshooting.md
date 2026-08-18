@@ -19,8 +19,9 @@ describes reality.
    project, `prj-dg-ml-prod-shared`) was archived, not migrated — this
    rebuild targets `prj-dg-devops-test` instead, a clean start rather than
    an import.
-2. No local `git init` — `cicd/cloudbuild-*.yaml` are written as templates
-   that assume a connected repository, not verified against one.
+2. No local `git init` — `.github/workflows/*.yml` are written as
+   templates that assume a connected GitHub repository, not verified
+   against one.
 
 ## Bootstrap is now live
 
@@ -186,9 +187,13 @@ everywhere).
 
 **Not verified — genuine gaps, not oversights:**
 - `sit`/`uat`/`prod` have never been applied.
-- `cicd/cloudbuild-*.yaml` has never triggered a real Cloud Build run.
+- `.github/workflows/*.yml` has never triggered a real GitHub Actions run
+  — this repo previously (briefly) provisioned a GCP-hosted git repo via
+  Secure Source Manager instead of using GitHub; that was reverted once
+  GitHub + GitHub Actions was chosen as the actual CI/CD path (see
+  `bootstrap/main.tf` git history).
 - Workload Identity Federation is authored (`bootstrap/main.tf`, off by
-  default) but never created.
+  default) but never created — needs a real `github_repository` value.
 - No integration test applies real infrastructure and tears it down.
 - Cost validation is a static price table, not a live Cloud Billing
   lookup (see `docs/validation.md`).

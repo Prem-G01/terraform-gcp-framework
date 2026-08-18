@@ -630,7 +630,7 @@ resources:
   #   python -m engine.cli build-function-source config/environments/dev
   # which zips source.local_dir and uploads it to exactly source.bucket/
   # source.object below, so Terraform deploys the same artifact.
-  # cicd/cloudbuild-apply.yaml runs this automatically before `apply`.
+  # .github/workflows/apply.yml runs this automatically before `apply`.
   cloudfunctions:
     enabled: true
     instances:

@@ -6,8 +6,8 @@
     python -m engine.cli validate-all config
 
 Exit code is 0 when nothing blocks the deployment (no ERROR-severity
-findings), 1 otherwise — this is the gate CI/CD checks (see cicd/cloudbuild.yaml
-"Validation" step and docs/cicd.md).
+findings), 1 otherwise — this is the gate CI/CD checks (see
+.github/workflows/plan.yml "Validate" step and docs/cicd.md).
 """
 
 from __future__ import annotations

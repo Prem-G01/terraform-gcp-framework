@@ -1,0 +1,151 @@
+# =============================================================================
+# Apply pipeline — runs only on push to main, as the tf-apply service
+# account, and ONLY after the matching GitHub Environment's required
+# reviewers approve (the `environment:` key below — configure required
+# reviewers per environment in Settings > Environments, once per repo; see
+# docs/cicd.md). Replaces the old cicd/cloudbuild-apply.yaml now that
+# GitHub Actions is this platform's CI/CD engine.
+#
+# Re-validates from scratch rather than trusting plan.yml's artifacts — if
+# main moved between the plan a human approved and this run, it validates
+# the *current* main, not the approved snapshot (see docs/cicd.md "Why
+# re-validate in the apply pipeline").
+# =============================================================================
+
+name: Terraform Apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "config/environments/**"
+      - "config/global/**"
+      - "config/schema/**"
+      - "modules/**"
+      - "platform/**"
+      - "engine/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Single environment to apply (leave blank to auto-detect from changed paths)"
+        required: false
+        type: choice
+        options: ["", dev, sit, uat, prod]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  detect-envs:
+    runs-on: ubuntu-latest
+    outputs:
+      envs: ${{ steps.detect.outputs.envs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: detect
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.environment }}" ]; then
+            echo 'envs=["${{ inputs.environment }}"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          before="${{ github.event.before }}"
+          after="${{ github.event.after }}"
+          if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
+            envs='["dev","sit","uat","prod"]'
+          else
+            changed=$(git diff --name-only "$before" "$after")
+            if echo "$changed" | grep -qE '^(modules/|platform/|config/global/|config/schema/|engine/)'; then
+              envs='["dev","sit","uat","prod"]'
+            else
+              envs=$(echo "$changed" \
+                | grep -oE '^config/environments/[a-z]+/' \
+                | sed -E 's#config/environments/([a-z]+)/#\1#' \
+                | sort -u | jq -R . | jq -sc .)
+            fi
+          fi
+          echo "envs=$envs" >> "$GITHUB_OUTPUT"
+
+  apply:
+    needs: detect-envs
+    if: needs.detect-envs.outputs.envs != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: ${{ fromJson(needs.detect-envs.outputs.envs) }}
+    # Each of dev/sit/uat/prod must exist as a GitHub Environment
+    # (Settings > Environments) with required reviewers configured — that
+    # protection rule is what gates this job on a human clicking Approve,
+    # equivalent to Cloud Build's old --require-approval.
+    environment: ${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate
+        run: |
+          set -euo pipefail
+          pip install -q -r engine/requirements.txt
+          python -m engine.cli validate "config/environments/${{ matrix.env }}" --json | tee validation.json
+          python -c "import json,sys; sys.exit(1 if json.load(open('validation.json'))['blocked'] else 0)"
+
+      - name: Render
+        run: |
+          python -m engine.cli render "config/environments/${{ matrix.env }}" \
+            --out "environments/${{ matrix.env }}/.generated/deployment.normalized.json"
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ fromJson(vars.ENVIRONMENTS_JSON)[matrix.env].wif_provider }}
+          service_account: ${{ fromJson(vars.ENVIRONMENTS_JSON)[matrix.env].tf_apply_sa }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # Uploads every cloudfunctions instance's local source to the exact
+      # bucket/object its deployment.yaml names, so `apply` deploys the
+      # same artifact this step just built — see docs/modules.md "Building
+      # and uploading Cloud Function source". A no-op with no
+      # cloudfunctions instances configured.
+      - name: Build function source
+        run: |
+          set -euo pipefail
+          pip install -q -r engine/requirements.txt
+          python -m engine.cli build-function-source "config/environments/${{ matrix.env }}"
+
+      # Secret scan gates apply too, not just plan — a secret introduced
+      # between the reviewed plan and this run must still be caught.
+      - name: Secret scan
+        run: python -m engine.cli secret-scan .
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.*"
+
+      - name: terraform apply
+        working-directory: environments/${{ matrix.env }}
+        run: |
+          set -euo pipefail
+          terraform init -input=false \
+            -backend-config="bucket=${{ fromJson(vars.ENVIRONMENTS_JSON)[matrix.env].state_bucket }}" \
+            -backend-config="prefix=${{ matrix.env }}"
+          terraform validate
+          terraform plan -input=false -out=tfplan
+          terraform apply -input=false -auto-approve tfplan
+          terraform output -json > apply_outputs.json
+
+      - name: Upload apply artifacts
+        run: |
+          set -euo pipefail
+          bucket="${{ fromJson(vars.ENVIRONMENTS_JSON)[matrix.env].artifact_bucket }}"
+          gcloud storage cp validation.json \
+            "environments/${{ matrix.env }}/apply_outputs.json" \
+            "gs://${bucket}/deployments/${{ matrix.env }}/${{ github.run_id }}/"

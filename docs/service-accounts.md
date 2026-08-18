@@ -13,8 +13,8 @@ with no IAM footprint.
 
 | Service account | Roles (see `bootstrap/main.tf` locals) | Used by |
 |---|---|---|
-| `tf-plan@<project>` | `roles/viewer`, `roles/iam.securityReviewer` — read-only | `cicd/cloudbuild-plan.yaml`, every PR |
-| `tf-apply@<project>` | Curated per-service `*.admin` roles matching exactly what `modules/` creates (compute, storage, Cloud SQL, Secret Manager, KMS, Cloud Run, Pub/Sub, Cloud Tasks, Scheduler, Workflows, Artifact Registry, Monitoring, Logging, BigQuery) + `serviceAccountAdmin`/`serviceAccountUser`/`projectIamAdmin`/`serviceUsageAdmin` | `cicd/cloudbuild-apply.yaml`, only after trigger approval |
+| `tf-plan@<project>` | `roles/viewer`, `roles/iam.securityReviewer` — read-only | `.github/workflows/plan.yml`, every PR |
+| `tf-apply@<project>` | Curated per-service `*.admin` roles matching exactly what `modules/` creates (compute, storage, Cloud SQL, Secret Manager, KMS, Cloud Run, Pub/Sub, Cloud Tasks, Scheduler, Workflows, Artifact Registry, Monitoring, Logging, BigQuery) + `serviceAccountAdmin`/`serviceAccountUser`/`projectIamAdmin`/`serviceUsageAdmin` | `.github/workflows/apply.yml`, only after the target GitHub Environment's required reviewer approves |
 
 Deliberately **not** `roles/editor` or `roles/owner` — see
 `config/global/security.yaml` `SEC_OVERPRIVILEGED_SERVICE_ACCOUNT`, which
@@ -28,24 +28,22 @@ ones.
 `bootstrap/main.tf` provisions Workload Identity Federation
 (`google_iam_workload_identity_pool` + `..._provider`) behind
 `var.enable_workload_identity_federation` (default `false`). When enabled
-with `github_repository = "<org>/<repo>"`, GitHub Actions (or any OIDC-
-capable CI) can assume `tf-plan`/`tf-apply` via
+with `github_repository = "<org>/<repo>"`, GitHub Actions can assume
+`tf-plan`/`tf-apply` via
 `principalSet://iam.googleapis.com/<pool>/attribute.repository/<org>/<repo>`
-— no JSON key ever created or stored. Cloud Build running in the same GCP
-project can instead run directly as these service accounts via
-`--service-account` on the trigger (see `cicd/cloudbuild-plan.yaml`
-header), which also needs no key.
+— no JSON key ever created or stored, see `.github/workflows/plan.yml`
+and `apply.yml`.
 
 ## Central repository: GitHub, not GCP-hosted
 
-This platform's git remote is GitHub — `cicd/` pipelines are triggered by
-GitHub Actions, which authenticates to GCP via the Workload Identity
-Federation pool below. An earlier iteration briefly provisioned a Secure
-Source Manager (GCP-hosted git) instance/repository instead; that was
-reverted (see [docs/troubleshooting.md](troubleshooting.md)) once the
-decision was made to keep the repo on GitHub. Nothing in `modules/` or
-`platform/` depends on where the repo lives, so this is a CI/CD-layer
-choice only.
+This platform's git remote is GitHub — `.github/workflows/*.yml` are
+triggered by pushes/PRs to it, and authenticate to GCP via the Workload
+Identity Federation pool above. An earlier iteration briefly provisioned
+a Secure Source Manager (GCP-hosted git) instance/repository instead;
+that was reverted (see [docs/troubleshooting.md](troubleshooting.md))
+once the decision was made to keep the repo on GitHub with GitHub Actions
+as the CI/CD engine. Nothing in `modules/` or `platform/` depends on
+where the repo lives, so this was a CI/CD-layer choice only.
 
 ## What this rebuild did not do
 

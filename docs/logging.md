@@ -5,8 +5,8 @@
 | What | Where | Retention |
 |---|---|---|
 | Terraform state | `gs://<state bucket>/<env>/` (GCS backend, versioned) | see `state_bucket_retention_days` in `bootstrap/variables.tf`, default 90 days of noncurrent versions + 7-day soft-delete |
-| Cloud Build step logs | Cloud Logging (`options.logging: CLOUD_LOGGING_ONLY` in both `cicd/*.yaml`) | governed by the project's Cloud Logging retention, not this repo |
-| `validation.json`, `plan.txt`, `plan.json`, `apply_outputs.json` | `gs://<artifact bucket>/deployments/<env>/<build id>/` | 180-day lifecycle rule (`bootstrap/main.tf` `google_storage_bucket.artifacts`) |
+| GitHub Actions run logs | GitHub's own Actions run history (`.github/workflows/*.yml`) | governed by the repository's Actions log-retention setting, not this repo's code |
+| `validation.json`, `plan.txt`, `plan.json`, `apply_outputs.json` | `gs://<artifact bucket>/deployments/<env>/<run id>/` | 180-day lifecycle rule (`bootstrap/main.tf` `google_storage_bucket.artifacts`) |
 | GCP audit logs (who ran what) | Cloud Audit Logs, automatic for every API call the `tf-plan`/`tf-apply` SAs make | governed by the project's org policy, not this repo |
 | Application logs (from deployed workloads) | `modules/monitoring/logging` → `google_logging_project_bucket_config`, configured per-environment in `deployment.yaml` `resources.logging.instances` (dev has `app-logs` @ 30 days, `audit-logs` @ 365 days) | set per-instance in `deployment.yaml` |
 

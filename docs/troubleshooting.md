@@ -267,6 +267,33 @@ one thing this repo cannot claim is fully cleaned up is the `dev-vpc`
 network and its Private Service Access peering — real, but no longer
 tracked by any Terraform state in this repository.
 
+### Follow-up cleanup attempt, still 2026-08-18
+
+Retried `gcloud services vpc-peerings delete --network=dev-vpc` directly
+later the same day — **identical failure**, same reason code
+(`FLOW_SN_DC_RESOURCE_PREVENTING_DELETE_CONNECTION`, "Producer services
+... are still using this connection"). Checked every producer type that
+uses Service Networking peering before retrying, to rule out something
+this repo missed: `gcloud sql instances list`, `gcloud redis instances
+list`, `gcloud filestore instances list`, `gcloud container clusters
+list` all returned zero results, and AlloyDB's API isn't even enabled on
+this project. `gcloud compute networks peerings list` shows the peering
+itself as `ACTIVE`/`Connected`, and `gcloud compute addresses list` shows
+only the expected reserved range (`google-managed-services-dev`) — no
+actual attached resource anywhere this session can see.
+
+This looks like the documented GCP-side eventual-consistency issue where
+the Service Networking backend's own internal reconciliation lags well
+behind reality, sometimes for a day or more, independent of anything a
+consumer project can do. Retrying the `gcloud` command again immediately
+won't help — there's nothing left to fix on this project's side. If this
+is still blocked whenever you next check: retry the same
+`gcloud services vpc-peerings delete --network=dev-vpc --project=prj-dg-
+devops-test` command after waiting longer, or open a GCP support case
+citing the reason code above. No cost accrues while it sits idle (an
+unused VPC network and reserved peering range aren't billed), so there's
+no urgency pressure beyond wanting Terraform-clean state.
+
 ## Common issues
 
 **`terraform plan` fails with "Backend initialization required"**

@@ -74,6 +74,41 @@ exact fixture and asserts both findings fire. `tests/fixtures/valid_minimal`
 is the same scenario made correct (vpc + subnet + service_accounts all
 enabled and referenced correctly) and is asserted to produce zero errors.
 
+## Break-glass override — `--force-security`
+
+Some situations are deliberate, known exceptions to policy — the clearest
+real example: temporarily disabling `deletion_protection` on a Cloud SQL
+instance specifically in order to tear it down (see
+`docs/troubleshooting.md` "Dev was applied, then torn down"). `render`
+supports exactly this, and nothing else:
+
+```bash
+python -m engine.cli render config/environments/dev \
+  --out environments/dev/.generated/deployment.normalized.json \
+  --force-security --reason "tearing down dev per user request 2026-08-18"
+```
+
+Rules:
+- **Only SECURITY-category ERROR findings can be forced.** If the block
+  includes any schema, dependency, naming, region, or YAML error, `render`
+  refuses outright — those mean the config itself is broken, not that a
+  policy exception is being made, and there is no override for that.
+- **`--reason` is mandatory** — `render` errors before even validating if
+  `--force-security` is set without it.
+- **Every use is audited.** A JSON line is appended to
+  `<out-dir>/override-audit.jsonl` — timestamp, OS user, reason, and every
+  finding that was overridden. Nothing about this is silent, and it's not
+  gitignored separately from the rest of `.generated/` on purpose — treat
+  it as something to review, not hide.
+- This is a CLI-level escape hatch for a human running `render` directly.
+  Neither `cicd/cloudbuild-plan.yaml` nor `cloudbuild-apply.yaml` pass
+  `--force-security` — a real override in CI would need its own deliberate
+  decision, not a default in the pipeline.
+
+See `tests/test_override.py` for the enforcement (forces a security-only
+violation through with an audit record; refuses when a non-security error
+is also present; refuses without `--reason`).
+
 ## Cost validation — an honest limitation
 
 `engine/cost_engine.py` estimates monthly spend from a **static**

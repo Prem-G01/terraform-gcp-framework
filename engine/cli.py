@@ -13,8 +13,11 @@ findings), 1 otherwise — this is the gate CI/CD checks (see cicd/cloudbuild.ya
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from engine import config_loader, cost_engine, dependency_engine, naming_engine, region_engine, schema_validator, security_engine
@@ -94,24 +97,75 @@ def cmd_render(args: argparse.Namespace) -> int:
     enforcement of "don't let Terraform run against an invalid config":
     platform/variables.tf's deployment_file points at this file, and if
     render refuses to write it, `terraform plan` fails on a missing file
-    rather than silently applying something nobody validated."""
+    rather than silently applying something nobody validated.
+
+    --force-security is the one sanctioned break-glass path: it downgrades
+    SECURITY-category ERROR findings only (e.g. temporarily disabling
+    deletion_protection to tear a resource down — see docs/troubleshooting.md
+    "Dev was applied, then torn down"). Schema/dependency/YAML/naming/region
+    errors are never forceable — those mean the config itself is broken,
+    not that a deliberate policy exception is being made. Every use is
+    written to an audit trail next to the rendered output; nothing about
+    this is silent."""
     env_dir = Path(args.env_dir)
     report = run_validation(env_dir)
-    if report.blocked:
+
+    if report.blocked and args.force_security:
+        non_security_errors = [f for f in report.errors if f.category != "security"]
+        if non_security_errors:
+            print(report.render())
+            print(
+                "\n--force-security cannot help here — the block includes "
+                f"{len(non_security_errors)} non-security error(s) "
+                "(schema/dependency/naming/region/yaml). Fix those first."
+            )
+            return 1
+        forced = [f for f in report.errors if f.category == "security"]
+    elif report.blocked:
         print(report.render())
         print("\nRefusing to render — fix the error(s) above before running terraform.")
         return 1
+    else:
+        forced = []
 
     deployment = config_loader.load_deployment(env_dir, env_dir.parent.parent)
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(deployment.normalized, indent=2), encoding="utf-8")
 
-    if report.warnings:
+    if forced:
+        banner = "!" * 78
+        print(banner)
+        print("SECURITY OVERRIDE IN EFFECT — the following ERROR-severity findings")
+        print("were forced through and did NOT block this render:")
+        print(banner)
+        for f in forced:
+            print(f"  [{f.rule}] {f.resource}: {f.message}")
+        print(f"Reason given: {args.reason}")
+        print(banner)
+        _write_override_audit(out_path, env_dir, args.reason, forced)
+    elif report.warnings:
         print(report.render())
         print()
+
     print(f"Wrote validated, normalized config to {out_path}")
     return 0
+
+
+def _write_override_audit(out_path: Path, env_dir: Path, reason: str, forced) -> None:
+    audit_path = out_path.parent / "override-audit.jsonl"
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "environment": str(env_dir),
+        "user": os.environ.get("USER") or os.environ.get("USERNAME") or getpass.getuser(),
+        "reason": reason,
+        "overridden_findings": [
+            {"rule": f.rule, "resource": f.resource, "message": f.message} for f in forced
+        ],
+    }
+    with audit_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record) + "\n")
+    print(f"Audit record appended to {audit_path}")
 
 
 def cmd_hardcode_scan(args: argparse.Namespace) -> int:
@@ -144,6 +198,12 @@ def main(argv: list[str] | None = None) -> int:
     p_render = sub.add_parser("render", help="Validate + write the normalized deployment JSON Terraform consumes")
     p_render.add_argument("env_dir", help="e.g. config/environments/dev")
     p_render.add_argument("--out", required=True, help="e.g. environments/dev/.generated/deployment.normalized.json")
+    p_render.add_argument(
+        "--force-security",
+        action="store_true",
+        help="Break-glass: forces through SECURITY-category ERROR findings only (never schema/dependency/naming/region/yaml). Requires --reason. Audited — see docs/validation.md.",
+    )
+    p_render.add_argument("--reason", help="Required with --force-security: why this override is deliberate and safe.")
     p_render.set_defaults(func=cmd_render)
 
     p_scan = sub.add_parser("hardcode-scan", help="Scan modules/platform/bootstrap for hardcoded values")
@@ -151,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
     p_scan.set_defaults(func=cmd_hardcode_scan)
 
     args = parser.parse_args(argv)
+    if args.command == "render" and args.force_security and not args.reason:
+        parser.error("--force-security requires --reason \"<why this is deliberate and safe>\"")
     return args.func(args)
 
 

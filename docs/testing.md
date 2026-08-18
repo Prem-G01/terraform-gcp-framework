@@ -11,6 +11,8 @@ python -m engine.cli hardcode-scan .                 # 0 findings
 python -m engine.cli build-function-source config/environments/dev --dry-run
 cd environments/dev && terraform init -backend=false && terraform validate  # Success
 cd environments/dev && terraform plan      # (with a real backend configured) 99 to add, 0 errors
+cd platform && terraform test                                # 2 passed, mock_provider, no GCP call
+cd modules/database/cloudsql && terraform test                # 2 passed, mock_provider, no GCP call
 ```
 
 The `terraform plan` above was run twice, manually, against the real
@@ -54,6 +56,41 @@ Run `pytest tests/ -v` — no GCP credentials, no network access, and no
 [docs/validation.md](validation.md) "Cost validation — an honest
 limitation" for the one place that trade-off is most visible).
 
+## Native Terraform tests (`*.tftest.hcl`)
+
+Terraform's built-in `terraform test` framework (>= 1.7) runs module-level
+tests with `mock_provider "google" {}` — every GCP API call is faked, so
+these run with no credentials, no network access, and touch nothing real:
+
+| File | Proves |
+|---|---|
+| `platform/tests/count_gating.tftest.hcl` | an empty `resources` block enables nothing; enabling one type (`buckets`) doesn't leak into any other |
+| `modules/database/cloudsql/tests/sql_user_creation.tftest.hcl` | `google_sql_user` is actually created for every configured user — direct regression coverage for the real bug this rebuild found (the original module computed the user list but never created the resource) |
+
+Run from the module directory itself: `cd platform && terraform test`, or
+`cd modules/database/cloudsql && terraform test` (each needs its own
+`terraform init` first, same as any root module — these two directories
+are the only ones set up to run standalone).
+
+**Why so little coverage, out of 29 resource types?** These two exist to
+demonstrate the pattern and to lock in the one bug this rebuild actually
+found and fixed — not as a claim that every module is covered. Extending
+this to the rest of `modules/` is real, valuable, unfinished work — see
+"What's not tested" below.
+
+**A real limitation of `mock_provider`, hit while writing these**: it
+still enforces the real provider schema's field-level validation (regexes,
+etc.), even though every value is faked. A mocked resource's computed
+attribute (e.g. a VPC's `self_link`) is a plausible-looking random string,
+not a real-shaped URL — feeding that into another resource's field that
+expects a URL pattern (e.g. Cloud SQL's `private_network`) fails validation
+under `mock_provider` even though the same wiring is correct against real
+GCP. `platform/tests/count_gating.tftest.hcl` avoids this by testing a
+resource type (`buckets`) with no such cross-module reference; testing a
+type that does chain through another module's computed output would need
+an explicit `override_resource` block to give the referenced value a
+realistic shape.
+
 ## What's not tested
 
 - **Integration**: no test actually runs `terraform apply` against a real
@@ -62,6 +99,7 @@ limitation" for the one place that trade-off is most visible).
   exists here (see [docs/troubleshooting.md](troubleshooting.md)).
 - **Cloud Build pipelines**: `cicd/*.yaml` is unexercised — no build has
   actually run it (no connected git remote/trigger in this environment).
-- **`modules/` resource-attribute correctness** beyond what `terraform
-  plan` against the real dev config already exercised once, manually —
-  there's no per-module unit test framework (e.g. Terratest) in this repo.
+- **Most of `modules/`** still has no dedicated `.tftest.hcl` — only
+  `cloudsql` does. The one real `terraform plan`/`apply` against the real
+  dev config (see above) is the only cross-module exercise the other 27
+  types have had.

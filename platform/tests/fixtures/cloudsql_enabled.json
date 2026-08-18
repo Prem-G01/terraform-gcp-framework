@@ -1,0 +1,50 @@
+{
+  "apiVersion": "platform.gcp/v1",
+  "kind": "Deployment",
+  "metadata": { "name": "test", "environment": "dev", "owner": "devops" },
+  "project": { "id": "prj-dg-devops-test" },
+  "region": { "primary": "asia-south1" },
+  "resources": {
+    "vpc": {
+      "enabled": true,
+      "instances": {
+        "test-vpc": { "auto_create_subnetworks": false, "routing_mode": "GLOBAL" }
+      }
+    },
+    "private_service_access": {
+      "enabled": true,
+      "instances": {
+        "psa-test": {
+          "network": "test-vpc",
+          "address": { "name": "psa-range", "purpose": "VPC_PEERING", "address_type": "INTERNAL", "prefix_length": 16 },
+          "service": "servicenetworking.googleapis.com"
+        }
+      }
+    },
+    "secrets": {
+      "enabled": true,
+      "instances": {
+        "root-password": { "secret_id": "root-password", "length": 24, "special": true }
+      }
+    },
+    "cloudsql": {
+      "enabled": true,
+      "instances": {
+        "test-sql": {
+          "region": "asia-south1",
+          "database_version": "MYSQL_8_0",
+          "tier": "db-custom-2-4096",
+          "availability_type": "ZONAL",
+          "deletion_protection": true,
+          "disk": { "size": 50, "type": "PD_SSD", "autoresize": true },
+          "backup": { "enabled": true, "start_time": "00:00" },
+          "network": { "private_network": "test-vpc", "ipv4_enabled": false },
+          "insights": { "query_insights_enabled": true, "query_string_length": 1024, "record_application_tags": true, "record_client_address": true },
+          "users": {
+            "root": { "username": "root", "password_secret": "root-password", "host": "%" }
+          }
+        }
+      }
+    }
+  }
+}

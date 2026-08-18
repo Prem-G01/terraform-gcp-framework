@@ -1,0 +1,8 @@
+{
+  "apiVersion": "platform.gcp/v1",
+  "kind": "Deployment",
+  "metadata": { "name": "test", "environment": "dev", "owner": "devops" },
+  "project": { "id": "prj-dg-devops-test" },
+  "region": { "primary": "asia-south1" },
+  "resources": {}
+}

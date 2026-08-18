@@ -1,0 +1,25 @@
+{
+  "apiVersion": "platform.gcp/v1",
+  "kind": "Deployment",
+  "metadata": { "name": "test", "environment": "dev", "owner": "devops" },
+  "project": { "id": "prj-dg-devops-test" },
+  "region": { "primary": "asia-south1" },
+  "resources": {
+    "buckets": {
+      "enabled": true,
+      "instances": {
+        "test-bucket": {
+          "name": "prj-dg-devops-test-dev-test-bucket",
+          "location": "ASIA-SOUTH1",
+          "storage_class": "STANDARD",
+          "force_destroy": false,
+          "versioning": { "enabled": true },
+          "uniform_bucket_level_access": true,
+          "public_access_prevention": "enforced",
+          "labels": {},
+          "lifecycle": { "enabled": false, "age": 30, "action": "Delete" }
+        }
+      }
+    }
+  }
+}

@@ -36,6 +36,17 @@ project can instead run directly as these service accounts via
 `--service-account` on the trigger (see `cicd/cloudbuild-plan.yaml`
 header), which also needs no key.
 
+## Central repository: GitHub, not GCP-hosted
+
+This platform's git remote is GitHub — `cicd/` pipelines are triggered by
+GitHub Actions, which authenticates to GCP via the Workload Identity
+Federation pool below. An earlier iteration briefly provisioned a Secure
+Source Manager (GCP-hosted git) instance/repository instead; that was
+reverted (see [docs/troubleshooting.md](troubleshooting.md)) once the
+decision was made to keep the repo on GitHub. Nothing in `modules/` or
+`platform/` depends on where the repo lives, so this is a CI/CD-layer
+choice only.
+
 ## What this rebuild did not do
 
 WIF is authored but **not applied** — creating a real pool/provider and
@@ -44,5 +55,8 @@ having org-level IAM permissions, both explicitly out of scope for this
 code-only rebuild (see
 [docs/troubleshooting.md](troubleshooting.md)). Run
 `terraform apply` in `bootstrap/` with `enable_workload_identity_federation
-= true` and a real `github_repository` value when you're ready to wire
-this up for real.
+= true` and a real `github_repository` value (`"<org>/<repo>"`) when
+you're ready to wire this up for real — GitHub Actions can then assume
+`tf-plan`/`tf-apply` via
+`principalSet://iam.googleapis.com/<pool>/attribute.repository/<org>/<repo>`,
+with no service-account key ever created or stored.

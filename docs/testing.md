@@ -78,12 +78,16 @@ these run with no credentials, no network access, and touch nothing real:
 |---|---|
 | `platform/tests/count_gating.tftest.hcl` (5 runs) | an empty `resources` block enables nothing; enabling `buckets` doesn't leak into any other type; `org_policies` respects a per-constraint toggle (`restrict_public_sql_ips: false` in the fixture is NOT in `org_policies_enforced`); an `iap` binding's `target_vm` resolves to the real `google_compute_instance` name via cross-module reference, not the config key; `binary_authorization`'s `evaluation_mode` output matches the fixture |
 | `modules/database/cloudsql/tests/sql_user_creation.tftest.hcl` | `google_sql_user` is actually created for every configured user — direct regression coverage for the real bug this rebuild found (the original module computed the user list but never created the resource) |
+| `modules/database/cloudsql/tests/network_defaults.tftest.hcl` | `network.ipv4_enabled` defaults to `false` (no public IP) when omitted from config, and an explicit `true` is never silently overridden — regression coverage for a real gap a `security_defaults` audit found (2026-08-19, see docs/security.md) |
 | `modules/security/workload_identity/tests/binding.tftest.hcl` | the binding grants exactly `roles/iam.workloadIdentityUser`, `member` is the `project.svc.id.goog[namespace/ksa]` form GKE Workload Identity expects, and `service_account_id` resolves to the real GCP SA from config — plus a zero-instances case creates zero bindings |
+| `modules/storage/buckets/tests/security_defaults.tftest.hcl` | `uniform_bucket_level_access`/`public_access_prevention`/`versioning.enabled` all default to their secure values when omitted, and an explicit override is never silently upgraded back — same `security_defaults` audit finding |
+| `modules/compute/vm/tests/security_defaults.tftest.hcl` | `network.public_ip` defaults to no `access_config` block (no external IP) and all three `shielded_vm.*` fields default to `true` when omitted, with an explicit `public_ip = true` never silently dropped — same audit finding |
 
 Run from the module directory itself: `cd platform && terraform test`, or
 `cd modules/database/cloudsql && terraform test` (each needs its own
-`terraform init` first, same as any root module — these three directories
-are the only ones set up to run standalone).
+`terraform init` first, same as any root module — `platform/`,
+`cloudsql`, `workload_identity`, `buckets`, and `vm` are the ones set up
+to run standalone).
 
 **Why so little coverage, out of 33 resource types?** These exist to
 demonstrate the pattern and to lock in real bugs/regressions this rebuild
@@ -138,12 +142,12 @@ verification that actually means anything for that part.
 - **GitHub Actions pipelines**: `.github/workflows/*.yml` is unexercised —
   no run has actually triggered it (no connected GitHub remote in this
   environment).
-- **Most of `modules/`** still has no dedicated `.tftest.hcl` — only
-  `cloudsql` and `workload_identity` do, plus `platform/tests
-  /count_gating.tftest.hcl`'s coverage of `buckets`, `org_policies`,
-  `iap`, and `binary_authorization`. The one real `terraform plan`/
-  `apply` against the real dev config (see above) is the only
-  cross-module exercise the other ~27 types have had.
+- **Most of `modules/`** still has no dedicated `.tftest.hcl` —
+  `cloudsql`, `workload_identity`, `buckets`, and `vm` do, plus
+  `platform/tests/count_gating.tftest.hcl`'s coverage of `buckets`,
+  `org_policies`, `iap`, and `binary_authorization`. The real `terraform
+  plan`/`apply` against the real dev config (see above) is the only
+  cross-module exercise the other ~25 types have had.
 - **`org_policies`, `iap`, `workload_identity`, and
   `binary_authorization`** (added for the zero-trust workstream — see
   [docs/security.md](security.md)) have never been applied against a

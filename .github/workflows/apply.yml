@@ -53,6 +53,14 @@ jobs:
             echo 'envs=["${{ inputs.environment }}"]' >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # workflow_dispatch with no environment chosen has no `before`/
+          # `after` to diff (those only exist on push events) — refuse
+          # rather than silently falling into the "diff everything" branch
+          # below, which would otherwise apply to dev/sit/uat/prod at once.
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "::error::Manual run with no environment selected — choose one from the 'environment' input rather than leaving it blank." >&2
+            exit 1
+          fi
           before="${{ github.event.before }}"
           after="${{ github.event.after }}"
           if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
@@ -83,6 +91,13 @@ jobs:
     # protection rule is what gates this job on a human clicking Approve,
     # equivalent to Cloud Build's old --require-approval.
     environment: ${{ matrix.env }}
+    # Serialize applies per environment — never cancel an in-flight apply
+    # (that could leave infrastructure half-applied), just queue the next
+    # one behind it rather than letting two runs race on the same GCS
+    # state lock.
+    concurrency:
+      group: tfapply-${{ matrix.env }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 

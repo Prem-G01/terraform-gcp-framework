@@ -6,22 +6,23 @@
 `prj-dg-devops-test` on 2026-08-18 (a since-superseded single-shared-SA
 design), then both fully destroyed the same day. `bootstrap/` was
 rewritten to the current dedicated-per-environment design; both it and
-`environments/dev` (117-resource plan, real bugs found and fixed — see
-"environments/dev applied for real" below) were applied for real again
-on 2026-08-19, then **both fully torn down again the same day at
-explicit user request**, including the `dev-vpc`/PSA-peering orphan that
-had been stuck since 2026-08-18 — see "Bootstrap re-applied
-(per-environment design), 2026-08-19" and "environments/dev applied for
-real — real bugs found, full teardown, 2026-08-19" below. As of that
-last section, **`prj-dg-devops-test` has nothing left that this repo
-created** (the KMS keyring/keys are the one deliberate exception — GCP
-cannot hard-delete them, see below), verified directly against GCP, not
-just Terraform state. `org_policies` was never successfully created for
-real in any apply — see the permission-gap note below. `sit`/`uat`/`prod`
-and CI/CD triggers have never been applied. Read this before calling
-anything here
-"production ready," and read the dated section headers in order — an
-earlier section can be fully superseded by a later one.
+`environments/dev` were applied for real again on 2026-08-19, then
+**both fully torn down again the same day at explicit user request**,
+including the `dev-vpc`/PSA-peering orphan that had been stuck since
+2026-08-18. Later the same day, after further code fixes, **both were
+applied a third time** to verify the current code specifically — see
+"Bootstrap re-applied (per-environment design)", "environments/dev
+applied for real — real bugs found, full teardown", and "Second real
+apply cycle — testing the current HEAD" below, all dated 2026-08-19.
+**As of that last section, both stacks are live**: bootstrap's 56
+resources and 112 of `environments/dev`'s 117 (only `org_policies`'s 5
+constraints are missing, blocked on a still-outstanding permission
+grant) are real in `prj-dg-devops-test` right now — this is the one
+point in this file where "live" actually means currently deployed, not
+history. `sit`/`uat`/`prod` and CI/CD triggers have still never been
+applied. Read this before calling anything here "production ready," and
+read the dated section headers in order — an earlier section can be
+fully superseded by a later one.
 
 **Decided at the start:**
 1. The previous local `terraform.tfstate` (which referenced a different
@@ -512,6 +513,45 @@ still real (expected, unavoidable). `config/environments/dev
 secure-default state; `git diff` after this session shows only the
 genuine fixes (provider quota routing, `shutil.which`, workflows
 `deletion_protection`), not any of the temporary teardown overrides.
+
+## Second real apply cycle — testing the current HEAD, 2026-08-19
+
+After the code-review and `security_defaults` audit fixes above, both
+stacks were applied for real a second time the same day, specifically to
+verify the *current* code (not the older code the first cycle tested) —
+`bootstrap/` (56 resources, fresh bucket names `-tfstate-v3`/`-logs-v2`
+to sidestep any lingering name-availability uncertainty from the first
+cycle's deletions) then `environments/dev` (117-resource plan).
+
+**112 of 117 resources are live** — everything except the 5
+`org_policies` constraints, which still fail with the exact same
+`orgpolicy.policies.create` `IAM_PERMISSION_DENIED` documented above;
+that permission was never actually granted before this session moved on
+to other work. Four issues hit along the way, three already-known and
+one new:
+
+- **`build-function-source` not re-run** — same operator error as the
+  first cycle (forgot to upload the Cloud Function source before
+  applying). Fixed by running it.
+- **The two logging buckets stuck `DELETE_REQUESTED` again** — same fix
+  as before, `gcloud logging buckets undelete` + `terraform untaint`.
+- **`app-keyring` and its 4 keys collided again** — expected, still
+  real, still can't be hard-deleted. Imported again, same as before.
+- **New: Cloud Tasks queue name reuse cooldown.** `google_cloud_tasks
+  _queue.queue["app-queue"]` failed with `Error 400: The queue cannot be
+  created because a queue with this name existed too recently` — a real,
+  documented GCP constraint (a deleted queue's name is reserved for a
+  cooldown period, independent of Terraform). Worked around by setting
+  `name: app-queue-v2` in `config/environments/dev/deployment.yaml`
+  (marked `# TEMP`, needs reverting once the real cooldown passes) rather
+  than waiting it out.
+
+**This closes the "freshness gap"** flagged before this cycle: GKE, Cloud
+SQL, Memorystore, KMS, Cloud Functions, Pub/Sub, Workflows, the IAP
+firewall rule, Workload Identity, and Binary Authorization are now all
+proven against real GCP with the current code — not just
+`terraform validate`/`mock_provider`. Only `org_policies` remains
+unverified live, purely on the outstanding permission grant.
 
 ## Common issues
 

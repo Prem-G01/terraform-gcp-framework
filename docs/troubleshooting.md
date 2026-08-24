@@ -702,6 +702,47 @@ GCP — `sit`/`uat`/`prod`'s project IDs are still the placeholders in
 `config/environments/<env>/deployment.yaml`, and no real plan/apply was
 attempted against them since those projects don't exist.
 
+## sit/uat/prod fleshed out to mirror dev's full resource coverage, 2026-08-24
+
+`sit`/`uat`/`prod` had previously been bare VPC-only templates (70-75
+lines, 2 resource types) — everything else deliberately `enabled: false`
+since "no SIT/UAT/prod infrastructure existed in the original
+repository." That meant `validate-all`/`terraform validate` passing for
+them proved almost nothing: a config that deploys one VPC will always
+validate trivially.
+
+Explicitly asked to maximize multi-environment readiness without
+creating real GCP projects (the user declined that — real cost against
+a real org's billing account, see below) — the achievable version of
+that is making the *code path* itself as proven as possible for the
+moment real projects do exist. Fleshed out all three to mirror `dev`'s
+full 34-resource-type deployment (all 752 lines of it), with only the
+genuinely environment-specific values changed: `metadata.environment`,
+`project.id` (still placeholders), VPC/subnet CIDRs (dev 10.10.1.0/24,
+sit 10.20.1.0/24, uat 10.30.1.0/24, prod 10.40.1.0/24 — all
+non-overlapping, in case these are ever peered), GKE
+`master_ipv4_cidr_block` (172.16/172.17/172.18/172.19.0.0/28, same
+reasoning), and `dev-*`/`sit-*`/etc. resource name prefixes. Generated
+`uat`/`prod` from `sit` via a scripted substitution rather than hand-
+retyping ~700 lines three times, then verified no leftover cross-
+environment string leaked through (checked directly, only benign
+substring matches like "repository"/"transit" found).
+
+All three now pass `validate-all`, `render`, and `terraform validate`
+cleanly — verified directly, not assumed — alongside `hardcode-scan`,
+`secret-scan`, and the full pytest suite (51 passed) with zero
+regressions. **What this still does not prove**, and cannot prove
+without real infrastructure: real cross-project IAM
+(`bootstrap/grants/` has still never applied against an actual spoke
+project — though `modules/iam/deploy_roles`'s 10-gap fix the same day
+directly de-risks this once it does), a real `terraform plan`/`apply`
+against real GCP, and real project IDs replacing the placeholders. The
+user was explicit about this: asked whether to create real `sit`/`uat`/
+`prod` projects in the organization's real, billing-attached GCP org,
+and declined — multi-environment readiness is capped well below its
+maximum score until that changes, and no amount of further config
+authoring closes that particular gap.
+
 ## Common issues
 
 **`terraform plan` fails with "Backend initialization required"**

@@ -16,11 +16,20 @@ resource "google_cloud_tasks_queue" "queue" {
 
 
 
+  # rate_limits/retry_config/stackdriver_logging_config were each a
+  # hard-required each.value reference with no fallback for the whole
+  # block, even though every field inside already had a lookup() default
+  # — the same gap class found in modules/database/cloudsql (backup),
+  # modules/artifact_registry (cleanup_policy), and
+  # modules/orchestration/scheduler (retry_config). Every real config
+  # sets all three explicitly, which is exactly why this went unnoticed.
+  # Found 2026-08-24.
+
   rate_limits {
 
     max_dispatches_per_second = lookup(
 
-      each.value.rate_limits,
+      lookup(each.value, "rate_limits", {}),
 
       "max_dispatches_per_second",
 
@@ -32,7 +41,7 @@ resource "google_cloud_tasks_queue" "queue" {
 
     max_concurrent_dispatches = lookup(
 
-      each.value.rate_limits,
+      lookup(each.value, "rate_limits", {}),
 
       "max_concurrent_dispatches",
 
@@ -48,7 +57,7 @@ resource "google_cloud_tasks_queue" "queue" {
 
     max_attempts = lookup(
 
-      each.value.retry_config,
+      lookup(each.value, "retry_config", {}),
 
       "max_attempts",
 
@@ -60,7 +69,7 @@ resource "google_cloud_tasks_queue" "queue" {
 
     min_backoff = lookup(
 
-      each.value.retry_config,
+      lookup(each.value, "retry_config", {}),
 
       "min_backoff",
 
@@ -72,7 +81,7 @@ resource "google_cloud_tasks_queue" "queue" {
 
     max_backoff = lookup(
 
-      each.value.retry_config,
+      lookup(each.value, "retry_config", {}),
 
       "max_backoff",
 
@@ -84,7 +93,7 @@ resource "google_cloud_tasks_queue" "queue" {
 
     max_doublings = lookup(
 
-      each.value.retry_config,
+      lookup(each.value, "retry_config", {}),
 
       "max_doublings",
 
@@ -96,7 +105,7 @@ resource "google_cloud_tasks_queue" "queue" {
 
     max_retry_duration = lookup(
 
-      each.value.retry_config,
+      lookup(each.value, "retry_config", {}),
 
       "max_retry_duration",
 
@@ -112,7 +121,7 @@ resource "google_cloud_tasks_queue" "queue" {
 
     sampling_ratio = lookup(
 
-      each.value.stackdriver_logging_config,
+      lookup(each.value, "stackdriver_logging_config", {}),
 
       "sampling_ratio",
 

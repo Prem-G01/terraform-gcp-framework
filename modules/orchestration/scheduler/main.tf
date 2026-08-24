@@ -32,11 +32,18 @@ resource "google_cloud_scheduler_job" "job" {
 
 
 
+  # `retry_config` itself was, like `backup` in cloudsql and
+  # `cleanup_policy` in artifact_registry, a hard-required each.value
+  # reference with no fallback for the whole block — every real config
+  # sets it explicitly, which is exactly why this went unnoticed (found
+  # 2026-08-24). Now falls back to an empty map so an omitted
+  # retry_config uses GCP's own defaults below instead of crashing
+  # `terraform plan`.
   retry_config {
 
     retry_count = lookup(
 
-      each.value.retry_config,
+      lookup(each.value, "retry_config", {}),
 
       "retry_count",
 
@@ -48,7 +55,7 @@ resource "google_cloud_scheduler_job" "job" {
 
     max_retry_duration = lookup(
 
-      each.value.retry_config,
+      lookup(each.value, "retry_config", {}),
 
       "max_retry_duration",
 
@@ -60,7 +67,7 @@ resource "google_cloud_scheduler_job" "job" {
 
     min_backoff_duration = lookup(
 
-      each.value.retry_config,
+      lookup(each.value, "retry_config", {}),
 
       "min_backoff_duration",
 
@@ -72,7 +79,7 @@ resource "google_cloud_scheduler_job" "job" {
 
     max_backoff_duration = lookup(
 
-      each.value.retry_config,
+      lookup(each.value, "retry_config", {}),
 
       "max_backoff_duration",
 
@@ -84,7 +91,7 @@ resource "google_cloud_scheduler_job" "job" {
 
     max_doublings = lookup(
 
-      each.value.retry_config,
+      lookup(each.value, "retry_config", {}),
 
       "max_doublings",
 

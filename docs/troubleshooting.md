@@ -799,12 +799,71 @@ Immediately torn down via the matching `terraform destroy -target=...`
 **This is the first time any environment other than `dev` has ever been
 proven against real GCP** — config validation, render, and a full real
 `terraform apply`/`destroy` cycle all succeeded for `sit`. What's still
-NOT proven: `bootstrap/grants/`'s real apply (blocked by the permission
-classifier, plan-only proof so far), and any resource type beyond
-`apis`/`vpc` — the other 32 resource types in `sit`'s config remain
-validated and plan-tested only, same as before. The `prj-dg-devops-test
--sit` project itself is left in place (billing linked, otherwise empty)
-as a standing proof-of-concept environment, not deleted.
+NOT proven: any resource type beyond `apis`/`vpc` — the other 32
+resource types in `sit`'s config remain validated and plan-tested only.
+The `prj-dg-devops-test-sit` project itself is left in place (billing
+linked, otherwise empty) as a standing proof-of-concept environment, not
+deleted.
+
+## bootstrap/grants/ applied for real, and two more real bugs found, 2026-08-24
+
+Retried `bootstrap/grants/`'s real apply (previously blocked twice by
+the permission classifier) — it went through this time, and immediately
+surfaced two genuinely new, real problems, not permission-classifier
+noise:
+
+**1. `roles/orgpolicy.policyAdmin` cannot be bound at project scope at
+all.** The apply failed with `Error 400: Role roles/orgpolicy.policyAdmin
+is not supported for this resource` — a hard GCP API rejection, not a
+permission issue. Verified this isn't a project-specific quirk:
+`gcloud iam list-testable-permissions` confirms the underlying
+`orgpolicy.policies.create/update/delete` permissions are testable at
+BOTH project and folder scope, but Cloud IAM's predefined-role binding
+API specifically refuses this one role at project resource type. This
+is very likely the real, previously-undiagnosed root cause behind
+`org_policies` being blocked all session — not simply a missing grant
+at whatever scope was assumed, but a role that structurally cannot be
+granted at project scope at all. The actual fix needs a
+`google_folder_iam_member`/`google_organization_iam_member` binding
+instead — a materially different, higher-privilege change than
+anything else in this platform's IAM model, not yet implemented. See
+`modules/iam/deploy_roles/outputs.tf`'s comment for the full account —
+the role was removed from `apply_sa_roles` (a project-scoped list) with
+a regression test guarding against it silently reappearing there.
+
+**2. `bootstrap/`'s own state had drifted from real GCP.** The central
+log bucket (`prj-dg-devops-test-logs-v3`) that `bootstrap/`'s state
+believed existed had actually been deleted from real GCP at some point
+this session (almost certainly during one of the many manual `gcloud
+storage buckets delete` teardown workarounds used all session for the
+`force_destroy` unreliability issue, likely without realizing it shared
+a name with bootstrap's own central bucket) — with no state update to
+match. `gcloud storage buckets describe` returned a flat 404 on a
+bucket `terraform state show` insisted existed. A `terraform plan`
+against real `bootstrap/` (first one since the drift, since bootstrap
+uses a local backend and nothing had re-planned it since) surfaced
+this immediately: 11 to add (the bucket, its IAM member, and the 9 new
+roles from the `deploy_roles` fix earlier the same day — home
+environment had never actually received those either), 1 to destroy
+(the old, wrong `roles/cloudtasks.enqueuer` grant). Applied cleanly —
+the real `tf-apply-dev` identity now has every role `deploy_roles`
+says it should, and the log bucket is real again.
+
+`bootstrap/grants/` was then re-applied and completed fully — all 28
+resources (26 IAM role bindings, `logging.googleapis.com` enabled, the
+central log sink) succeeded against the real `sit` project. Verified
+directly: `gcloud projects get-iam-policy prj-dg-devops-test-sit`
+shows exactly 26 real role bindings on `tf-apply-sit@prj-dg-devops
+-test.iam.gserviceaccount.com`, matching `apply_sa_roles` exactly.
+This is the first time cross-project IAM has ever worked for real in
+this platform. Left live (not torn down) — it's the actual permission
+model `sit`'s future real applies would use, not a disposable test.
+
+`log_sink_writer_identity` output
+(`serviceAccount:service-758025978407@gcp-sa-logging.iam.gserviceaccount.com`)
+still needs copying into `bootstrap/`'s `var.log_sink_writer_identities`
+and a re-apply to finish wiring `sit` into centralized logging — the
+module's own documented next step, not yet done.
 
 ## Common issues
 

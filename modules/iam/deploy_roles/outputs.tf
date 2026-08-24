@@ -11,12 +11,14 @@ locals {
   # config/global/security.yaml SEC_OVERPRIVILEGED_SERVICE_ACCOUNT, which
   # this list exists to satisfy).
   #
-  # 10 real gaps found auditing this 2026-08-24, verified directly
-  # against the installed IAM role definitions (`gcloud iam roles
-  # describe`/`gcloud iam roles list`) against every distinct
-  # `resource "google_*"` type across modules/ — not assumed. None of
-  # this was ever caught because every real apply this platform has done
-  # used a human operator's own ADC credentials directly, never the real
+  # 9 real gaps fixed here, plus one (orgpolicy) that turned out to need
+  # a fundamentally different fix — found auditing this 2026-08-24,
+  # verified directly against the installed IAM role definitions
+  # (`gcloud iam roles describe`/`gcloud iam roles list`) against every
+  # distinct `resource "google_*"` type across modules/, and against a
+  # real apply where relevant — not assumed. None of this was ever
+  # caught because every real apply this platform has done used a human
+  # operator's own ADC credentials directly, never the real
   # tf-apply-<env> identity via WIF:
   #
   # - roles/compute.admin has ZERO container.* permissions (GKE is a
@@ -40,12 +42,24 @@ locals {
   # - roles/resourcemanager.projectIamAdmin has ZERO iap.* permissions;
   #   modules/security/iap's google_iap_tunnel_instance_iam_member needs
   #   iap.tunnelInstances.setIamPolicy. Added roles/iap.admin.
-  # - roles/orgpolicy.policyAdmin (orgpolicy.policies.create/update/
-  #   delete) was missing entirely — the same permission gap that has
-  #   blocked org_policies applying under a human operator's own
-  #   credentials all session (see docs/troubleshooting.md) turns out to
-  #   ALSO be missing from the real CI/CD identity's own role grant, a
-  #   second, independent instance of the same underlying gap.
+  # - roles/orgpolicy.policyAdmin was added here on 2026-08-24 (same
+  #   reasoning as above), but a REAL apply against prj-dg-devops-test-sit
+  #   the same day proved it wrong: GCP rejects binding this specific
+  #   predefined role at project scope outright — "Error 400: Role
+  #   roles/orgpolicy.policyAdmin is not supported for this resource" —
+  #   even though `gcloud iam list-testable-permissions` confirms the
+  #   underlying orgpolicy.policies.create/update/delete permissions ARE
+  #   testable at project scope. Verified this isn't project-specific:
+  #   the same permissions ARE listed as testable at folder scope too, so
+  #   the fix is a folder- or org-level `google_folder_iam_member`/
+  #   `google_organization_iam_member` binding, not anything this
+  #   project-scoped list can express. Removed from here — see
+  #   docs/service-accounts.md "Org Policy grants need folder/org scope"
+  #   for what actually needs to change, still unimplemented. This is
+  #   very likely the real, previously-undiagnosed root cause of
+  #   org_policies being blocked under a human operator's own credentials
+  #   all session too, not merely a missing grant at whatever scope was
+  #   assumed.
   apply_sa_roles = [
     "roles/compute.admin",
     "roles/container.admin",
@@ -73,7 +87,6 @@ locals {
     "roles/cloudfunctions.admin",
     "roles/documentai.admin",
     "roles/iap.admin",
-    "roles/orgpolicy.policyAdmin",
   ]
 
   # Plan-time identities only ever read.

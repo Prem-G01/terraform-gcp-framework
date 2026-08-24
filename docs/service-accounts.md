@@ -72,6 +72,41 @@ whoever is actually accountable for that project — the same separation of
 concerns as `roles/iam.serviceAccountAdmin` (who an identity is) versus
 `roles/resourcemanager.projectIamAdmin` (what it can do where).
 
+## Org Policy grants need folder/org scope
+
+A real `bootstrap/grants/` apply against `prj-dg-devops-test-sit` on
+2026-08-24 found that `roles/orgpolicy.policyAdmin` cannot be bound at
+project scope at all — GCP's IAM API rejects it outright (`Error 400:
+Role roles/orgpolicy.policyAdmin is not supported for this resource`),
+even though the underlying `orgpolicy.policies.create/update/delete`
+permissions ARE testable at project scope (confirmed via `gcloud iam
+list-testable-permissions`). Cloud IAM restricts which resource types a
+given predefined role can actually be bound to, independent of whether
+its permissions apply there — this is one of those roles.
+
+The permissions ARE testable at folder scope too, so the real fix is a
+`google_folder_iam_member` (or `google_organization_iam_member`)
+binding on whichever folder/org node the target project lives under —
+not anything `bootstrap/main.tf`'s or `bootstrap/grants/`'s current
+project-scoped `google_project_iam_member` resources can express. This
+is very likely the actual, previously-undiagnosed root cause behind
+`config/environments/*/deployment.yaml`'s `org_policies` block having
+never applied successfully for any identity all session (see
+`docs/troubleshooting.md`) — not simply a missing grant at whatever
+scope was assumed, but a role that structurally cannot be granted at
+project scope regardless of who requests it.
+
+**Not yet implemented**: neither `bootstrap/main.tf` nor
+`bootstrap/grants/main.tf` grants any folder- or org-level role today —
+doing so is a materially bigger privilege escalation than anything else
+in this platform's IAM model (folder/org IAM admin, not merely project
+IAM admin), and needs a deliberate design decision — who holds that
+permission, and how it's scoped down — rather than being added
+reflexively to unblock one constraint type. `roles/orgpolicy.policyAdmin`
+was removed from `modules/iam/deploy_roles`'s `apply_sa_roles` (a
+project-scoped list) after this was found, with a regression test
+guarding against it silently reappearing there.
+
 ## No long-lived keys
 
 `bootstrap/main.tf` provisions Workload Identity Federation

@@ -74,9 +74,15 @@ run "apply_sa_roles_covers_every_resource_type_this_platform_creates" {
     error_message = "roles/iap.admin is required for modules/security/iap's google_iap_tunnel_instance_iam_member"
   }
 
+  # roles/orgpolicy.policyAdmin was briefly added here 2026-08-24, then
+  # removed the same day after a real apply against prj-dg-devops-test-sit
+  # proved GCP rejects binding it at project scope outright ("Role ...
+  # is not supported for this resource") — the correct fix is a folder-
+  # or org-level binding, which this project-scoped list can't express.
+  # This guards against re-adding it here by mistake.
   assert {
-    condition     = contains(output.apply_sa_roles, "roles/orgpolicy.policyAdmin")
-    error_message = "roles/orgpolicy.policyAdmin is required for modules/security/org_policies — this is the SAME gap that has independently blocked a human operator's own org_policies apply all session"
+    condition     = !contains(output.apply_sa_roles, "roles/orgpolicy.policyAdmin")
+    error_message = "roles/orgpolicy.policyAdmin cannot be bound at project scope (confirmed against real GCP) — must never reappear in this project-scoped role list"
   }
 }
 

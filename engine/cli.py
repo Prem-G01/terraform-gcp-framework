@@ -190,18 +190,17 @@ def cmd_build_function_source(args: argparse.Namespace) -> int:
     without shell=True can't find it through PATH the way a shell does;
     a bare "gcloud" here previously failed on Windows with
     FileNotFoundError, silently after the zip had already built (a real
-    bug found running this for real)."""
+    bug found running this for real). Resolved lazily, right before the
+    first real upload, NOT upfront — an earlier version of this fix
+    checked eagerly at the top of the function, which broke the
+    documented no-op case (an environment with no cloudfunctions
+    instances, or none with source.local_dir set) on any machine without
+    gcloud installed, even though that case never calls gcloud at all. A
+    code review caught this regression before it shipped."""
     import shutil
     import subprocess
     import zipfile
     import tempfile
-
-    gcloud = None
-    if not args.dry_run:
-        gcloud = shutil.which("gcloud")
-        if gcloud is None:
-            print("gcloud not found on PATH — required to upload Cloud Function source (not needed for --dry-run).")
-            return 1
 
     env_dir = Path(args.env_dir)
     deployment = config_loader.load_deployment(env_dir, env_dir.parent.parent)
@@ -211,6 +210,8 @@ def cmd_build_function_source(args: argparse.Namespace) -> int:
     if not targets:
         print("No cloudfunctions instances configured — nothing to build.")
         return 0
+
+    gcloud = None  # resolved lazily below, only once something actually needs uploading
 
     for name in targets:
         instance = instances.get(name)
@@ -230,6 +231,12 @@ def cmd_build_function_source(args: argparse.Namespace) -> int:
         if not source_path.is_dir():
             print(f"{name}: local source dir not found: {source_path}")
             return 1
+
+        if not args.dry_run and gcloud is None:
+            gcloud = shutil.which("gcloud")
+            if gcloud is None:
+                print("gcloud not found on PATH — required to upload Cloud Function source (not needed for --dry-run).")
+                return 1
 
         with tempfile.TemporaryDirectory() as tmp:
             zip_path = Path(tmp) / "source.zip"

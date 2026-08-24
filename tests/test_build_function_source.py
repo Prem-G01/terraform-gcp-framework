@@ -21,14 +21,14 @@ def _make_env(tmp_path: Path) -> Path:
     return env_dir
 
 
-def test_dry_run_builds_zip_from_local_dir_without_uploading(tmp_path, capsys):
-    source_dir = tmp_path / "src"
-    source_dir.mkdir()
-    (source_dir / "main.py").write_text("def handler(request): pass\n", encoding="utf-8")
-    (source_dir / "requirements.txt").write_text("flask\n", encoding="utf-8")
-    (source_dir / "test_main.py").write_text("# should be excluded from the zip\n", encoding="utf-8")
-
-    env_dir = _make_env(tmp_path)
+def _write_fn_deployment(env_dir: Path, *, local_dir: Path | None = None) -> None:
+    """Writes a deployment.yaml with a single cloudfunctions instance
+    "my-fn" — local_dir omitted entirely when None, matching the
+    "nothing to build" shape every test that passes local_dir=None wants
+    to exercise."""
+    source_lines = ""
+    if local_dir is not None:
+        source_lines = f"          local_dir: {local_dir.as_posix()}\n"
     (env_dir / "deployment.yaml").write_text(f"""\
 apiVersion: platform.gcp/v1
 kind: Deployment
@@ -49,12 +49,22 @@ resources:
         runtime: python312
         entry_point: handler
         source:
-          local_dir: {source_dir.as_posix()}
-          bucket: some-bucket
+{source_lines}          bucket: some-bucket
           object: fn/my-fn.zip
         service_account:
           name: fn-sa
 """, encoding="utf-8")
+
+
+def test_dry_run_builds_zip_from_local_dir_without_uploading(tmp_path, capsys):
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "main.py").write_text("def handler(request): pass\n", encoding="utf-8")
+    (source_dir / "requirements.txt").write_text("flask\n", encoding="utf-8")
+    (source_dir / "test_main.py").write_text("# should be excluded from the zip\n", encoding="utf-8")
+
+    env_dir = _make_env(tmp_path)
+    _write_fn_deployment(env_dir, local_dir=source_dir)
 
     rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=True))
 
@@ -73,31 +83,7 @@ resources:
 
 def test_skips_instance_with_no_local_dir_configured(tmp_path, capsys):
     env_dir = _make_env(tmp_path)
-    (env_dir / "deployment.yaml").write_text("""\
-apiVersion: platform.gcp/v1
-kind: Deployment
-metadata:
-  name: fixture
-  environment: dev
-  owner: devops
-project:
-  id: prj-dg-devops-test
-region:
-  primary: asia-south1
-resources:
-  cloudfunctions:
-    enabled: true
-    instances:
-      my-fn:
-        location: asia-south1
-        runtime: python312
-        entry_point: handler
-        source:
-          bucket: some-bucket
-          object: fn/my-fn.zip
-        service_account:
-          name: fn-sa
-""", encoding="utf-8")
+    _write_fn_deployment(env_dir, local_dir=None)
 
     rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=True))
 
@@ -117,7 +103,27 @@ def test_dry_run_does_not_require_gcloud_on_path(tmp_path, monkeypatch):
     (source_dir / "main.py").write_text("def handler(request): pass\n", encoding="utf-8")
 
     env_dir = _make_env(tmp_path)
-    (env_dir / "deployment.yaml").write_text(f"""\
+    _write_fn_deployment(env_dir, local_dir=source_dir)
+
+    rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=True))
+
+    assert rc == 0
+
+
+def test_real_run_with_no_instances_configured_does_not_require_gcloud(tmp_path, monkeypatch):
+    """Regression test: an earlier version of the gcloud-on-Windows fix
+    resolved shutil.which("gcloud") unconditionally as soon as
+    dry_run=False, before ever checking whether there was anything to
+    build. An environment with cloudfunctions disabled/empty has zero
+    targets and would previously return 0 without touching gcloud at
+    all (matching .github/workflows/apply.yml's "no-op with no
+    cloudfunctions instances configured" comment) — the eager check
+    broke that on any machine/CI container without gcloud installed. A
+    code review caught this before it shipped."""
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    env_dir = _make_env(tmp_path)
+    (env_dir / "deployment.yaml").write_text("""\
 apiVersion: platform.gcp/v1
 kind: Deployment
 metadata:
@@ -130,23 +136,29 @@ region:
   primary: asia-south1
 resources:
   cloudfunctions:
-    enabled: true
-    instances:
-      my-fn:
-        location: asia-south1
-        runtime: python312
-        entry_point: handler
-        source:
-          local_dir: {source_dir.as_posix()}
-          bucket: some-bucket
-          object: fn/my-fn.zip
-        service_account:
-          name: fn-sa
+    enabled: false
+    instances: {}
 """, encoding="utf-8")
 
-    rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=True))
+    rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=False))
 
     assert rc == 0
+
+
+def test_real_run_with_no_local_dir_configured_does_not_require_gcloud(tmp_path, monkeypatch, capsys):
+    """Same regression as above, second variant: an instance exists but
+    has no source.local_dir set (source built/uploaded elsewhere), so the
+    loop `continue`s past it and subprocess.run is never reached — this
+    must not require gcloud either."""
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    env_dir = _make_env(tmp_path)
+    _write_fn_deployment(env_dir, local_dir=None)
+
+    rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=False))
+
+    assert rc == 0
+    assert "no source.local_dir set" in capsys.readouterr().out
 
 
 def test_real_upload_resolves_gcloud_via_shutil_which(tmp_path, monkeypatch):
@@ -165,32 +177,7 @@ def test_real_upload_resolves_gcloud_via_shutil_which(tmp_path, monkeypatch):
     (source_dir / "main.py").write_text("def handler(request): pass\n", encoding="utf-8")
 
     env_dir = _make_env(tmp_path)
-    (env_dir / "deployment.yaml").write_text(f"""\
-apiVersion: platform.gcp/v1
-kind: Deployment
-metadata:
-  name: fixture
-  environment: dev
-  owner: devops
-project:
-  id: prj-dg-devops-test
-region:
-  primary: asia-south1
-resources:
-  cloudfunctions:
-    enabled: true
-    instances:
-      my-fn:
-        location: asia-south1
-        runtime: python312
-        entry_point: handler
-        source:
-          local_dir: {source_dir.as_posix()}
-          bucket: some-bucket
-          object: fn/my-fn.zip
-        service_account:
-          name: fn-sa
-""", encoding="utf-8")
+    _write_fn_deployment(env_dir, local_dir=source_dir)
 
     rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=False))
 
@@ -207,32 +194,7 @@ def test_real_upload_fails_cleanly_when_gcloud_missing(tmp_path, monkeypatch, ca
     (source_dir / "main.py").write_text("def handler(request): pass\n", encoding="utf-8")
 
     env_dir = _make_env(tmp_path)
-    (env_dir / "deployment.yaml").write_text(f"""\
-apiVersion: platform.gcp/v1
-kind: Deployment
-metadata:
-  name: fixture
-  environment: dev
-  owner: devops
-project:
-  id: prj-dg-devops-test
-region:
-  primary: asia-south1
-resources:
-  cloudfunctions:
-    enabled: true
-    instances:
-      my-fn:
-        location: asia-south1
-        runtime: python312
-        entry_point: handler
-        source:
-          local_dir: {source_dir.as_posix()}
-          bucket: some-bucket
-          object: fn/my-fn.zip
-        service_account:
-          name: fn-sa
-""", encoding="utf-8")
+    _write_fn_deployment(env_dir, local_dir=source_dir)
 
     rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=False))
 

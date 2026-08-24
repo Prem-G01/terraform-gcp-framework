@@ -607,6 +607,19 @@ vpc-peerings delete --network=dev-vpc --project=prj-dg-devops-test`,
 then `gcloud compute networks delete dev-vpc`), and there's no Terraform
 state left to do it through.
 
+**Retried on 2026-08-24** — identical
+`FLOW_SN_DC_RESOURCE_PREVENTING_DELETE_CONNECTION` failure, this time
+naming a specific internal subject ID in the error detail. Checked for
+any real attached producer directly: zero Cloud SQL instances, zero
+Redis/Memorystore instances, zero Filestore instances in the project;
+the reserved peering range (`google-managed-services-dev`, 10.185.0.0)
+is still marked `RESERVED` but nothing uses it. Confirms this is
+genuinely GCP-side backend reconciliation lag, not a real blocker on
+this project's side — likely extended by this same connection having
+been created and destroyed multiple times across this session's several
+apply/destroy cycles. Still unresolved; retry again later with the same
+two commands above.
+
 **The lesson, plainly**: when tearing down multiple interdependent
 stacks, destroy in strict dependency order and confirm each stack's
 state is either fully destroyed or safely relocated before touching

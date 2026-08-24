@@ -385,7 +385,6 @@ resources:
     enabled: true
     instances:
       app-queue:
-        name: app-queue-v2 # TEMP: for the 2026-08-19 real-apply verification cycle — a deleted Cloud Tasks queue name is reserved for a real GCP cooldown period and can't be immediately reused; restore to the config key default (remove this line) once the cooldown passes
         location: "{region}"
         rate_limits:
           max_dispatches_per_second: 10

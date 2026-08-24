@@ -6,20 +6,22 @@
 `prj-dg-devops-test` on 2026-08-18 (a since-superseded single-shared-SA
 design), then both fully destroyed the same day. `bootstrap/` was
 rewritten to the current dedicated-per-environment design; both it and
-`environments/dev` were applied for real again on 2026-08-19, then
-**both fully torn down again the same day at explicit user request**,
-including the `dev-vpc`/PSA-peering orphan that had been stuck since
-2026-08-18. Later the same day, after further code fixes, **both were
-applied a third time** to verify the current code specifically — see
-"Bootstrap re-applied (per-environment design)", "environments/dev
-applied for real — real bugs found, full teardown", and "Second real
-apply cycle — testing the current HEAD" below, all dated 2026-08-19.
-**As of that last section, both stacks are live**: bootstrap's 56
-resources and 112 of `environments/dev`'s 117 (only `org_policies`'s 5
-constraints are missing, blocked on a still-outstanding permission
-grant) are real in `prj-dg-devops-test` right now — this is the one
-point in this file where "live" actually means currently deployed, not
-history. `sit`/`uat`/`prod` and CI/CD triggers have still never been
+`environments/dev` were applied for real again on 2026-08-19, then torn
+down; applied a third time later the same day to verify the current code
+specifically (112 of 117 resources — see "Second real apply cycle"
+below); then torn down again. **That last teardown hit a real operator
+mistake, not just a GCP quirk** — see "Second teardown, and a real
+sequencing mistake" below: `bootstrap/`'s state bucket was destroyed
+before confirming `environments/dev`'s own remaining state (which lived
+in that same bucket) was fully torn down first, orphaning
+`dev-vpc`/its default route/the PSA address/the PSA peering connection
+with no Terraform state left to manage them through. **As of that final
+section, `prj-dg-devops-test` has nothing left except that orphan** —
+`bootstrap/` is fully destroyed and verified clean; `dev-vpc` and the
+PSA resources are real but untracked, blocked on the same
+`FLOW_SN_DC_RESOURCE_PREVENTING_DELETE_CONNECTION` GCP-side condition as
+the original 2026-08-18 incident, and need manual `gcloud` cleanup once
+it clears. `sit`/`uat`/`prod` and CI/CD triggers have still never been
 applied. Read this before calling anything here "production ready," and
 read the dated section headers in order — an earlier section can be
 fully superseded by a later one.
@@ -552,6 +554,58 @@ firewall rule, Workload Identity, and Binary Authorization are now all
 proven against real GCP with the current code — not just
 `terraform validate`/`mock_provider`. Only `org_policies` remains
 unverified live, purely on the outstanding permission grant.
+
+## Second teardown, and a real sequencing mistake, 2026-08-19
+
+Tearing both stacks back down (same session, same day, at explicit user
+request): the `deletion_protection`/`force_destroy`/`prevent_destroy`
+two-step dance worked exactly as documented above — 81 of
+`environments/dev`'s 112 resources destroyed cleanly, blocked only on
+`google_service_networking_connection.private_connection["psa-dev"]`
+with the identical `FLOW_SN_DC_RESOURCE_PREVENTING_DELETE_CONNECTION`
+error as the original 2026-08-18 incident (confirmed Cloud SQL and
+Memorystore, the only real producers, were already destroyed — this is
+GCP backend reconciliation lag, not a real blocker on this project's
+side, same conclusion as before). All temporary config overrides were
+safely reverted at that point, since none of the still-blocked resources
+(`dev-vpc`, its default route, the PSA address/connection, and 27
+API-enablement entries) reference any of them.
+
+**Then a real mistake, not a GCP-side issue**: `bootstrap/` was
+destroyed next — including its state bucket
+(`prj-dg-devops-test-tfstate-v3`) — without first confirming that
+`environments/dev`'s own remaining state (the still-undestroyed
+`dev-vpc`/PSA/API entries) had already been moved out of that same
+bucket. It hadn't; `environments/dev` used that bucket as its GCS
+backend the whole time. Deleting it deleted dev's remaining state along
+with it — `terraform destroy` in `environments/dev` afterward failed
+outright with `Error 404: The specified bucket does not exist` on the
+state file itself. **No state backup existed to recover from** (unlike
+`bootstrap/`, which always keeps a local state file precisely because it
+can't use a GCS backend — `environments/dev` had no equivalent local
+copy since it was always run against a real backend this cycle).
+
+The remaining `dev-vpc`/PSA/route/API resources are now genuinely
+orphaned — real, but untracked by any Terraform state, the same
+situation as the original 2026-08-18 incident, caused this time by
+operator sequencing error rather than a GCP quirk alone. Retried the PSA
+peering delete directly via `gcloud services vpc-peerings delete`
+immediately after — identical `FLOW_SN_DC_RESOURCE_PREVENTING_DELETE
+_CONNECTION` failure, confirming the underlying GCP-side block hadn't
+resolved yet regardless of the state-tracking mistake. `dev-vpc` and its
+default route, the reserved PSA address, and the PSA peering connection
+are still real in `prj-dg-devops-test`, need manual `gcloud` cleanup
+once GCP's backend releases the connection (`gcloud services
+vpc-peerings delete --network=dev-vpc --project=prj-dg-devops-test`,
+then `gcloud compute networks delete dev-vpc`), and there's no Terraform
+state left to do it through.
+
+**The lesson, plainly**: when tearing down multiple interdependent
+stacks, destroy in strict dependency order and confirm each stack's
+state is either fully destroyed or safely relocated before touching
+anything the next stack's state depends on — `environments/dev`'s
+backend bucket should never have been in bootstrap's destroy plan while
+dev still had undestroyed resources tracked in it.
 
 ## Common issues
 

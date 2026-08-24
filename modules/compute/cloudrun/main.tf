@@ -4,7 +4,7 @@ resource "google_cloud_run_v2_service" "cloudrun" {
   name                = lookup(each.value, "name", each.key)
   location            = each.value.location
   ingress             = each.value.ingress
-  deletion_protection = each.value.deletion_protection
+  deletion_protection = lookup(each.value, "deletion_protection", true)
   labels              = each.value.labels
 
   template {

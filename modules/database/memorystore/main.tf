@@ -20,4 +20,12 @@ resource "google_redis_instance" "cache" {
 
   auth_enabled            = lookup(each.value, "auth_enabled", true)
   transit_encryption_mode = lookup(each.value, "transit_encryption_mode", "SERVER_AUTHENTICATION")
+
+  # Defaults to GCP's own native default (false) rather than this
+  # platform's usual true-by-default for cloudsql/gke/bigquery/
+  # workflows/cloudrun — a cache is normally rebuildable/ephemeral data,
+  # not the kind of durable state those defaults exist to protect. Opt
+  # in per-instance if this cache genuinely holds something
+  # irreplaceable.
+  deletion_protection = lookup(each.value, "deletion_protection", false)
 }

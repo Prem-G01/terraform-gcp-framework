@@ -11,6 +11,29 @@ inside `modules/*/main.tf`) — an engineer can still override them per
 instance in `deployment.yaml`, but doing so is exactly what the security
 engine (below) exists to catch.
 
+**`deletion_protection`, specifically**, exists on 8 of this platform's
+resource types (audited directly against the installed provider schema,
+not assumed): `cloudsql`, `gke`, `bigquery` (tables), `workflows`,
+`cloudrun`, `vm`, `memorystore`, and `secrets`. Every one of them exposes
+it via `lookup(each.value, "deletion_protection", <default>)` — but the
+default genuinely differs by category, not a uniform `true`:
+
+- **`true`** for `cloudsql`, `gke`, `bigquery`, `workflows`, `cloudrun` —
+  managed data stores / application-tier resources where an accidental
+  delete is costly and replacement isn't a routine operation.
+- **`false`** (GCP's own native default) for `vm`, `memorystore`,
+  `secrets` — infra-plumbing/ephemeral resources where routine lifecycle
+  operations (a `machine_type` change forces `google_compute_instance`
+  replacement; a cache or a regeneratable secret isn't durable state)
+  would otherwise be blocked by a protection flag that doesn't map to a
+  real risk for that resource type. Opt in per-instance where it
+  genuinely applies (e.g. a VM that shouldn't be casually replaced).
+
+Only `cloudsql`'s is enforced at ERROR severity
+(`SEC_SQL_NO_DELETION_PROTECTION` below) — the others are a safe
+default, not a validated policy, so an explicit `false` in
+`deployment.yaml` is allowed and not flagged for the rest.
+
 ## Enforced by the validation engine
 
 `config/global/security.yaml` is the rule catalogue — id, which resource

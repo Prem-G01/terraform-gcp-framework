@@ -40,4 +40,14 @@ resource "google_compute_instance" "vm" {
     enable_integrity_monitoring = each.value.shielded_vm.integrity_monitoring
   }
 
+  # Defaults to GCP's own native default (false), not this platform's
+  # usual true-by-default for managed data stores (cloudsql/gke/bigquery/
+  # workflows/cloudrun) — a machine_type or boot_disk.image change forces
+  # google_compute_instance to be replaced, and deletion_protection=true
+  # would block that routine, non-destructive lifecycle operation far
+  # more often than it would for a rarely-replaced database or cluster.
+  # Opt in per-instance for a VM that genuinely shouldn't be casually
+  # replaced.
+  deletion_protection = lookup(each.value, "deletion_protection", false)
+
 }

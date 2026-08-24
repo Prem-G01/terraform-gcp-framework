@@ -21,6 +21,16 @@ def validate_naming(deployment) -> list[Finding]:
     # default compute-style pattern (e.g. BigQuery datasets allow
     # underscores and mixed case; buckets allow dots).
     TYPE_PATTERN_KEY = {"bigquery": "bigquery_dataset", "buckets": "bucket"}
+    # Same idea for max_length — config/global/naming.yaml defines
+    # sql_instance (98) and bigquery_dataset (1024) explicitly higher than
+    # compute's 63, but every resource type was being checked against a
+    # single hardcoded compute_max regardless of its own declared limit —
+    # found 2026-08-24, same class of gap as region_engine.py's
+    # zone_suffixes (a config value that looked enforced but wasn't). A
+    # real BigQuery dataset name between 64 and 1024 characters — valid
+    # per both GCP and this platform's own config — would have been
+    # wrongly rejected as NAME_TOO_LONG.
+    TYPE_MAX_LENGTH_KEY = {"bigquery": "bigquery_dataset", "buckets": "bucket", "cloudsql": "sql_instance"}
     findings: list[Finding] = []
 
     project_id = deployment.raw.get("project", {}).get("id", "")
@@ -48,11 +58,12 @@ def validate_naming(deployment) -> list[Finding]:
             )
         )
 
-    compute_max = max_len.get("compute", 63)
+    default_max = max_len.get("compute", max_len.get("default", 63))
     reserved = set(naming.get("reserved_words", []))
 
     for rtype in deployment.enabled_resource_types():
         pattern = allowed_chars.get(TYPE_PATTERN_KEY.get(rtype, ""), default_pattern)
+        type_max = max_len.get(TYPE_MAX_LENGTH_KEY.get(rtype, ""), default_max)
         for name, instance in deployment.instances(rtype).items():
             resource_name = instance.get("name", name) if isinstance(instance, dict) else name
             if not isinstance(resource_name, str):
@@ -77,14 +88,14 @@ def validate_naming(deployment) -> list[Finding]:
                         message=f"'{resource_name}' does not match the naming pattern {pattern}.",
                     )
                 )
-            if len(resource_name) > compute_max:
+            if len(resource_name) > type_max:
                 findings.append(
                     Finding(
                         severity="ERROR",
                         category="naming",
                         rule="NAME_TOO_LONG",
                         resource=f"{rtype}.{name}",
-                        message=f"'{resource_name}' is {len(resource_name)} characters; the limit is {compute_max}.",
+                        message=f"'{resource_name}' is {len(resource_name)} characters; the limit is {type_max}.",
                     )
                 )
 

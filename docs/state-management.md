@@ -14,8 +14,14 @@ terraform init \
   -backend-config="prefix=dev"
 ```
 
-For this project that bucket is real: `prj-dg-devops-test-tfstate` (see
-"Bootstrapping" below).
+For this project that bucket name is NOT `prj-dg-devops-test-tfstate` —
+a different, real, unrelated project ("audit-platform") claimed that
+exact name in this shared test project on 2026-08-19, see "Bootstrapping"
+below and [docs/troubleshooting.md](troubleshooting.md) "Bootstrap
+re-applied". Whatever name you actually choose at the next real
+`bootstrap apply`, verify it's still available first
+(`gcloud storage buckets describe gs://<name>`) rather than assuming a
+name used earlier in this repo's history still is.
 
 GCS backends get state locking, versioning, and consistency for free once
 the bucket itself has object versioning on — which `bootstrap/main.tf`
@@ -58,37 +64,30 @@ before you run this again for another project). That deployment was fully
 torn down the same day, and `bootstrap/main.tf` was rewritten to the
 per-environment design described above.
 
-**The current design was applied for real**, against `prj-dg-devops-test`,
-on 2026-08-19 — 56 resources, real outputs below. See
-[docs/troubleshooting.md](troubleshooting.md) "Bootstrap re-applied" for
-a real bucket-name-collision incident hit partway through (unrelated to
-this repo — a different, real "audit-platform" project had claimed
-`prj-dg-devops-test-tfstate` in this same shared test project since the
-previous day).
+**The current design was also applied for real**, against
+`prj-dg-devops-test`, on 2026-08-19 — 56 resources — then **torn down
+again the same day**, at explicit user request, after proving it worked.
+See [docs/troubleshooting.md](troubleshooting.md) "Bootstrap re-applied"
+and "Torn down again the same day" for the full sequence, including a
+real bucket-name-collision incident hit partway through the apply
+(unrelated to this repo — a different, real "audit-platform" project had
+claimed `prj-dg-devops-test-tfstate` in this same shared test project
+since the previous day; worked around with a `-v2` bucket name, never
+touched the other project's resources) and the same `force_destroy`
+issue from 2026-08-18 recurring on teardown. `prj-dg-devops-test` has
+nothing left from that apply, verified directly against GCP.
 
-| Output | Value |
+| Output | Shape |
 |---|---|
-| `state_bucket` | `prj-dg-devops-test-tfstate-v2` (not `-tfstate` — see the incident above) |
-| `artifact_bucket` | `prj-dg-devops-test-tf-artifacts` |
-| `log_bucket` | `prj-dg-devops-test-logs` |
-| `terraform_plan_sa_emails` | `tf-plan-<env>@prj-dg-devops-test.iam.gserviceaccount.com` for `dev`/`sit`/`uat`/`prod` |
-| `terraform_apply_sa_emails` | `tf-apply-<env>@prj-dg-devops-test.iam.gserviceaccount.com` for `dev`/`sit`/`uat`/`prod` |
+| `state_bucket` | string |
+| `artifact_bucket` | string |
+| `log_bucket` | string |
+| `terraform_plan_sa_emails` | `map(environment => email)` |
+| `terraform_apply_sa_emails` | `map(environment => email)` |
 
 These are the values every environment's `terraform init -backend-config=`
 and `.github/workflows/*.yml` `ENVIRONMENTS_JSON` repository variable need
-(see [docs/cicd.md](cicd.md)). Only `dev` (this apply's `var.home_environment`)
-has its `tf-apply`/`tf-plan` roles actually granted so far —
-`sit`/`uat`/`prod`'s pairs exist as identities but have no roles anywhere
-yet, pending `bootstrap/grants/` against their real (still placeholder)
-project IDs.
-
-`bootstrap/terraform.tfstate.bootstrap` (local) was copied to
-`gs://prj-dg-devops-test-tfstate-v2/bootstrap/terraform.tfstate` as a
-backup immediately after this apply. `bootstrap/versions.tf` itself
-stays on `backend "local"` regardless — reconfiguring it to a `gcs`
-backend pointed at that path is
-still a deliberate, separate follow-up step whenever you next run this for
-real.
+(see [docs/cicd.md](cicd.md)).
 
 ## Why one state file per environment for now
 

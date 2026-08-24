@@ -5,11 +5,14 @@
 `bootstrap/` and `environments/dev` were both applied for real against
 `prj-dg-devops-test` on 2026-08-18 (a since-superseded single-shared-SA
 design), then both fully destroyed the same day. `bootstrap/` was
-rewritten to the current dedicated-per-environment design and **applied
-for real again on 2026-08-19** — see "Bootstrap re-applied (per-
-environment design), 2026-08-19" below; that section, not "Bootstrap is
-now live", describes current reality. `environments/dev` has NOT been
-re-applied with the current design yet. `sit`/`uat`/`prod` and CI/CD
+rewritten to the current dedicated-per-environment design, applied for
+real again on 2026-08-19, then **torn down again the same day at
+explicit user request** — see "Bootstrap re-applied (per-environment
+design), 2026-08-19" and "Torn down again the same day, 2026-08-19"
+below. As of that last section, **`prj-dg-devops-test` has nothing left
+that this repo created**, verified directly against GCP, not just
+Terraform state. `environments/dev` has never been applied with the
+current per-environment bootstrap design. `sit`/`uat`/`prod` and CI/CD
 triggers have never been applied. Read this before calling anything here
 "production ready," and read the dated section headers in order — an
 earlier section can be fully superseded by a later one.
@@ -350,6 +353,29 @@ backup immediately after — the "still pending" backup step from the
 this bootstrap. WIF is still off (`enable_workload_identity_federation =
 false` — no `github_repository` value yet). `bootstrap/grants/` has not
 been applied against any real `sit`/`uat`/`prod` project.
+
+### Torn down again the same day, 2026-08-19
+
+At explicit user request, immediately after the re-apply above, all 56
+resources were destroyed. `terraform destroy` handled 55 of them cleanly;
+the state bucket (`prj-dg-devops-test-tfstate-v2`) hit the identical
+`force_destroy` issue as the 2026-08-18 teardown — it now held one
+versioned object (the state backup copied there minutes earlier), and
+`google_storage_bucket.force_destroy = false` doesn't reliably empty a
+bucket with version history. Same workaround as before: `gcloud storage
+rm --recursive` + `gcloud storage buckets delete` directly, then
+`terraform destroy` again to clear the remaining 7 API-enablement
+entries from state (a no-op against the real APIs — `disable_on_destroy
+= false`). Verified against real GCP afterward, not just Terraform state:
+no `tf-plan-<env>`/`tf-apply-<env>` service accounts, no
+`-tfstate-v2`/`-tf-artifacts`/`-logs` buckets remain in
+`prj-dg-devops-test`. `terraform state list` in `bootstrap/` is empty.
+
+Confirmed while checking: the real "audit-platform" project mentioned
+above is genuinely active in this shared test project, with its own
+`tf-plan-audit-platform`/`tf-apply-audit-platform` service accounts and a
+second bucket (`tfstate-prj-dg-apps-dev`) — someone else's real,
+growing Terraform setup, not touched, not related to this repo.
 
 ## Common issues
 

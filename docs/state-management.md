@@ -55,31 +55,38 @@ their own project afterward, see
 [docs/troubleshooting.md](troubleshooting.md) "Bootstrap is now live" for
 what happened (including a real `terraform import` incident worth reading
 before you run this again for another project). That deployment was fully
-torn down the same day, and `bootstrap/main.tf` has since been rewritten
-to the per-environment design described above — the outputs below are the
-current design's shape, not a record of what's live:
+torn down the same day, and `bootstrap/main.tf` was rewritten to the
+per-environment design described above.
 
-| Output | Shape |
+**The current design was applied for real**, against `prj-dg-devops-test`,
+on 2026-08-19 — 56 resources, real outputs below. See
+[docs/troubleshooting.md](troubleshooting.md) "Bootstrap re-applied" for
+a real bucket-name-collision incident hit partway through (unrelated to
+this repo — a different, real "audit-platform" project had claimed
+`prj-dg-devops-test-tfstate` in this same shared test project since the
+previous day).
+
+| Output | Value |
 |---|---|
-| `state_bucket` | string |
-| `artifact_bucket` | string |
-| `log_bucket` | string |
-| `terraform_plan_sa_emails` | `map(environment => email)` |
-| `terraform_apply_sa_emails` | `map(environment => email)` |
+| `state_bucket` | `prj-dg-devops-test-tfstate-v2` (not `-tfstate` — see the incident above) |
+| `artifact_bucket` | `prj-dg-devops-test-tf-artifacts` |
+| `log_bucket` | `prj-dg-devops-test-logs` |
+| `terraform_plan_sa_emails` | `tf-plan-<env>@prj-dg-devops-test.iam.gserviceaccount.com` for `dev`/`sit`/`uat`/`prod` |
+| `terraform_apply_sa_emails` | `tf-apply-<env>@prj-dg-devops-test.iam.gserviceaccount.com` for `dev`/`sit`/`uat`/`prod` |
 
 These are the values every environment's `terraform init -backend-config=`
 and `.github/workflows/*.yml` `ENVIRONMENTS_JSON` repository variable need
-(see [docs/cicd.md](cicd.md)).
+(see [docs/cicd.md](cicd.md)). Only `dev` (this apply's `var.home_environment`)
+has its `tf-apply`/`tf-plan` roles actually granted so far —
+`sit`/`uat`/`prod`'s pairs exist as identities but have no roles anywhere
+yet, pending `bootstrap/grants/` against their real (still placeholder)
+project IDs.
 
-That state-backup incident is moot now — the whole earlier deployment was
-fully torn down the same day (see
-[docs/troubleshooting.md](troubleshooting.md) "Full teardown"), and
-`bootstrap/main.tf`'s design has changed since. It's worth reading for the
-*mechanics* of copying `bootstrap/terraform.tfstate.bootstrap` into the
-state bucket as a backup after a real apply, which still applies:
-`bootstrap/versions.tf` stays on `backend "local"` regardless (the bucket
-it would move state into doesn't exist until this stack's first apply
-finishes), so reconfiguring it to a `gcs` backend pointed at that path is
+`bootstrap/terraform.tfstate.bootstrap` (local) was copied to
+`gs://prj-dg-devops-test-tfstate-v2/bootstrap/terraform.tfstate` as a
+backup immediately after this apply. `bootstrap/versions.tf` itself
+stays on `backend "local"` regardless — reconfiguring it to a `gcs`
+backend pointed at that path is
 still a deliberate, separate follow-up step whenever you next run this for
 real.
 

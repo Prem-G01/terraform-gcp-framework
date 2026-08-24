@@ -3,16 +3,16 @@
 ## What this rebuild did and did not do
 
 `bootstrap/` and `environments/dev` were both applied for real against
-`prj-dg-devops-test`, then both fully destroyed again — all with the
-user's explicit confirmation at each step. See "Bootstrap is now live",
-"Dev was applied, then torn down", and "Full teardown (bootstrap + the
-last of dev), 2026-08-18" below for the complete sequence. As of the last
-section, **prj-dg-devops-test has nothing left that this repo created** —
-every real-infrastructure section below describes history, not current
-state. `sit`/`uat`/`prod` and CI/CD triggers were never applied. Read this
-before calling anything here "production ready," and read the final
-section before assuming any of the earlier "is now live" sections still
-describes reality.
+`prj-dg-devops-test` on 2026-08-18 (a since-superseded single-shared-SA
+design), then both fully destroyed the same day. `bootstrap/` was
+rewritten to the current dedicated-per-environment design and **applied
+for real again on 2026-08-19** — see "Bootstrap re-applied (per-
+environment design), 2026-08-19" below; that section, not "Bootstrap is
+now live", describes current reality. `environments/dev` has NOT been
+re-applied with the current design yet. `sit`/`uat`/`prod` and CI/CD
+triggers have never been applied. Read this before calling anything here
+"production ready," and read the dated section headers in order — an
+earlier section can be fully superseded by a later one.
 
 **Decided at the start:**
 1. The previous local `terraform.tfstate` (which referenced a different
@@ -298,6 +298,58 @@ devops-test` command after waiting longer, or open a GCP support case
 citing the reason code above. No cost accrues while it sits idle (an
 unused VPC network and reserved peering range aren't billed), so there's
 no urgency pressure beyond wanting Terraform-clean state.
+
+## Bootstrap re-applied (per-environment design), 2026-08-19
+
+`bootstrap/`'s current dedicated-per-environment design (see git history —
+"Dedicated per-environment SAs, cross-project grants, centralized
+logging") was applied for real against `prj-dg-devops-test`, after
+explicit user confirmation at each step (a `terraform plan` reviewed
+first, then a separate confirmation before `apply`). 56 resources, real:
+
+- State bucket: `gs://prj-dg-devops-test-tfstate-v2` (note the `-v2` —
+  see the incident below)
+- Artifact bucket: `gs://prj-dg-devops-test-tf-artifacts`
+- Central log bucket: `gs://prj-dg-devops-test-logs`, with `dev`'s
+  `google_logging_project_sink` wired to it
+- 8 dedicated service accounts: `tf-plan-<env>`/`tf-apply-<env>` for
+  `dev`/`sit`/`uat`/`prod`, all in `prj-dg-devops-test`
+- `dev`'s (this apply's `home_environment`) `tf-apply`/`tf-plan` pair
+  has its full curated role set granted; `sit`/`uat`/`prod`'s pairs
+  exist as identities only, no roles anywhere yet — that's
+  `bootstrap/grants/`'s job, pending real (currently placeholder)
+  project IDs for those three
+- 7 APIs enabled
+
+**A real incident, not a leftover from our own history this time.** The
+apply got partway through — 47 of 56 resources created (all the SAs,
+role bindings, `artifacts`/`logs` buckets) — then failed on
+`google_storage_bucket.state` with `Error 409: ... you already own it`.
+Investigated before assuming anything: `gcloud storage buckets describe
+gs://prj-dg-devops-test-tfstate` showed a bucket created that same day
+(`2026-08-19T06:02:53Z`) containing `audit-platform/state/default.tfstate`
+— a real, different Terraform project's state, not ours, not created by
+this session. Something else — another engineer, another automation, an
+unrelated Claude session — claimed that exact bucket name in this shared
+test project sometime between the 2026-08-18 teardown and this apply.
+Left it completely untouched (never deleted, never imported, never
+inspected beyond `describe`) and used a different name instead
+(`prj-dg-devops-test-tfstate-v2`, confirmed with the user first) to
+finish the remaining 9 resources (the state bucket itself + 8 per-
+environment IAM bindings on it). If you're reusing this project for
+other work, `prj-dg-devops-test-tfstate` is not available and something
+called "audit-platform" is real and running there — worth knowing who
+owns it before it surprises the next person.
+
+`bootstrap/terraform.tfstate.bootstrap` was copied to
+`gs://prj-dg-devops-test-tfstate-v2/bootstrap/terraform.tfstate` as a
+backup immediately after — the "still pending" backup step from the
+2026-08-18 incident, actually done this time.
+
+**Not yet done**: `environments/dev` has not been re-applied against
+this bootstrap. WIF is still off (`enable_workload_identity_federation =
+false` — no `github_repository` value yet). `bootstrap/grants/` has not
+been applied against any real `sit`/`uat`/`prod` project.
 
 ## Common issues
 

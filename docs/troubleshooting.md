@@ -620,6 +620,18 @@ been created and destroyed multiple times across this session's several
 apply/destroy cycles. Still unresolved; retry again later with the same
 two commands above.
 
+**Retried again, more thoroughly, 2026-08-24** — identical failure,
+same subject ID (`171113`) in the error detail both times, which just
+identifies this specific connection/operation internally rather than
+pointing at a new blocking resource. This pass also checked AlloyDB
+(API not even enabled on the project), Redis/Memorystore via direct API
+call across all locations (empty), and Serverless VPC Access connectors
+(zero). Every producer type this platform could plausibly have created
+is now ruled out. This is the limit of client-side diagnosis — what's
+left is purely GCP's own backend reconciliation state, not anything
+fixable from `gcloud`/Terraform. Leave it; retry occasionally, or open a
+GCP support case if it's still stuck after several more days.
+
 **The lesson, plainly**: when tearing down multiple interdependent
 stacks, destroy in strict dependency order and confirm each stack's
 state is either fully destroyed or safely relocated before touching

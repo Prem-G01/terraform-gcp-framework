@@ -21,7 +21,7 @@ metadata:
   owner: devops
 
 project:
-  id: prj-dg-devops-test-sit   # placeholder — replace with the real SIT project ID
+  id: prj-dg-devops-test-sit   # real project, created 2026-08-24, folder 474619799501, billing account 01DAA8-A0BFA9-3E18B5
 
 region:
   primary: asia-south1

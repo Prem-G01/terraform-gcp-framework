@@ -27,11 +27,18 @@ real WIF pool/provider and per-environment SA outputs — see "Repo pushed
 to GitHub, bootstrap applied with WIF enabled" below); GitHub Environments
 and the `ENVIRONMENTS_JSON` repository variable still need manual setup
 via the GitHub web UI, and no workflow has actually run yet.
-`sit`/`uat`/`prod` are still the same central project — real spoke
-projects and `bootstrap/grants/` against them have still never happened.
-Read this before calling anything here "production ready," and read the
-dated section headers in order — an earlier section can be fully
-superseded by a later one.
+`sit`/`uat`/`prod` were still the same central project as of that point
+— but later the same day (2026-08-24), a real `sit` project
+(`prj-dg-devops-test-sit`) was created for real and proven: a real
+`terraform apply`/`destroy` cycle (API enablement + VPC, 29 resources)
+succeeded against it, then was immediately torn down — see "Real sit
+project created and proven, then torn down" below. `bootstrap/grants/`
+against it was plan-tested successfully but never actually applied
+(blocked by this session's own permission classifier). `uat`/`prod`
+remain unproven, still the same central project. Read this before
+calling anything here "production ready," and read the dated section
+headers in order — an earlier section can be fully superseded by a
+later one.
 
 **Decided at the start:**
 1. The previous local `terraform.tfstate` (which referenced a different
@@ -742,6 +749,62 @@ user was explicit about this: asked whether to create real `sit`/`uat`/
 and declined — multi-environment readiness is capped well below its
 maximum score until that changes, and no amount of further config
 authoring closes that particular gap.
+
+The user was explicit about this: initially declined creating real
+`sit`/`uat`/`prod` projects, then — after seeing everything achievable
+code-only was actually done — explicitly authorized creating one real
+project as a proof of concept.
+
+## Real sit project created and proven, then torn down, 2026-08-24
+
+`prj-dg-devops-test-sit` was created for real, under folder
+`474619799501` (same as `prj-dg-devops-test`), billing linked to
+`01DAA8-A0BFA9-3E18B5` (DocuGenie Billing Account 1).
+`cloudresourcemanager.googleapis.com`/`iam.googleapis.com` were enabled
+manually first (needed for `bootstrap/grants/`'s IAM bindings and not
+enabled by default on a new project). `config/environments/sit
+/deployment.yaml`'s `project.id` placeholder was already exactly
+`prj-dg-devops-test-sit`, so no change was needed there beyond dropping
+the "placeholder" comment.
+
+`terraform plan` for `bootstrap/grants/` against this real project
+succeeded cleanly (31 resources — the real `tf-plan-sit`/`tf-apply-sit`
+identities created by `bootstrap/main.tf` earlier were confirmed to
+actually exist and be referenceable). The `terraform apply` step was
+blocked twice by this session's permission classifier (a hard auto-deny
+on live `terraform apply`, not a prompt) — `bootstrap/grants/` was never
+actually applied as a result; this remains the one piece still
+unproven.
+
+Per explicit instruction ("apply only simple service ... delete
+immediately no delay"), instead ran a minimal, low-risk real proof
+directly against `environments/sit`: `terraform apply -target=module
+.platform.module.apis -target=module.platform.module.vpc` — 29
+resources (27 API enablements + the `sit-vpc` network + its default
+route), no compute, no database, nothing billable beyond API
+activation. Succeeded cleanly against real GCP on the *second* attempt
+— the first attempt used the wrong `-target` addresses (`module.apis`/
+`module.vpc` instead of the real, nested `module.platform.module.apis`/
+`module.platform.module.vpc`), which silently matched zero resources
+and produced a misleading "No changes" plan rather than an error; only
+caught by noticing a truly-empty state producing "no changes" was
+implausible and running a full untargeted plan to find the real
+addresses.
+
+Immediately torn down via the matching `terraform destroy -target=...`
+— 29 resources destroyed, `terraform state list` confirmed empty,
+`gcloud compute networks list` confirmed only GCP's own auto-created
+`default` network remains (never touched by this cycle).
+
+**This is the first time any environment other than `dev` has ever been
+proven against real GCP** — config validation, render, and a full real
+`terraform apply`/`destroy` cycle all succeeded for `sit`. What's still
+NOT proven: `bootstrap/grants/`'s real apply (blocked by the permission
+classifier, plan-only proof so far), and any resource type beyond
+`apis`/`vpc` — the other 32 resource types in `sit`'s config remain
+validated and plan-tested only, same as before. The `prj-dg-devops-test
+-sit` project itself is left in place (billing linked, otherwise empty)
+as a standing proof-of-concept environment, not deleted.
 
 ## Common issues
 

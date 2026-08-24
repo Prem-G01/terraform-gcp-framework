@@ -23,11 +23,16 @@ resource "google_cloudfunctions2_function" "function" {
   }
 
   service_config {
-    max_instance_count = lookup(each.value.scaling, "max_instance_count", 3)
-    min_instance_count = lookup(each.value.scaling, "min_instance_count", 0)
+    # `scaling`/`resources` were each hard-required each.value references
+    # with no fallback for the whole object, even though every field
+    # inside already had a lookup() default — same gap class found in
+    # cloudsql/artifact_registry/scheduler/cloudtasks (2026-08-24). Every
+    # real config sets both explicitly, which is why this went unnoticed.
+    max_instance_count = lookup(lookup(each.value, "scaling", {}), "max_instance_count", 3)
+    min_instance_count = lookup(lookup(each.value, "scaling", {}), "min_instance_count", 0)
 
-    available_memory = lookup(each.value.resources, "memory", "256M")
-    timeout_seconds  = lookup(each.value.resources, "timeout_seconds", 60)
+    available_memory = lookup(lookup(each.value, "resources", {}), "memory", "256M")
+    timeout_seconds  = lookup(lookup(each.value, "resources", {}), "timeout_seconds", 60)
 
     service_account_email = var.service_accounts[each.value.service_account.name]
 

@@ -861,9 +861,27 @@ model `sit`'s future real applies would use, not a disposable test.
 
 `log_sink_writer_identity` output
 (`serviceAccount:service-758025978407@gcp-sa-logging.iam.gserviceaccount.com`)
-still needs copying into `bootstrap/`'s `var.log_sink_writer_identities`
-and a re-apply to finish wiring `sit` into centralized logging — the
-module's own documented next step, not yet done.
+was then copied into `bootstrap/`'s `var.log_sink_writer_identities` and
+re-applied — a single, clean `google_storage_bucket_iam_member` addition,
+0 changed, 0 destroyed. Verified directly:
+`gcloud storage buckets get-iam-policy gs://prj-dg-devops-test-logs-v3`
+shows both `dev`'s and `sit`'s log-writer identities holding
+`roles/storage.objectCreator`. Centralized logging is now genuinely
+wired end-to-end for `sit`, not just documented as a next step. The
+current, exact, reproducible `bootstrap/` apply command (all real
+values, not placeholders):
+
+```bash
+cd bootstrap
+terraform apply \
+  -var project_id=prj-dg-devops-test \
+  -var state_bucket_name=prj-dg-devops-test-tfstate-v4 \
+  -var artifact_bucket_name=prj-dg-devops-test-tf-artifacts \
+  -var log_bucket_name=prj-dg-devops-test-logs-v3 \
+  -var enable_workload_identity_federation=true \
+  -var github_repository=Prem-G01/terraform-gcp-framework \
+  -var 'log_sink_writer_identities={"sit":"serviceAccount:service-758025978407@gcp-sa-logging.iam.gserviceaccount.com"}'
+```
 
 ## Common issues
 

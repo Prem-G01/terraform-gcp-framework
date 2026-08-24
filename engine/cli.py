@@ -259,7 +259,11 @@ def cmd_cost_check_live(args: argparse.Namespace) -> int:
 
     env_dir = Path(args.env_dir)
     config_root = env_dir.parent.parent
-    deployment = config_loader.load_deployment(env_dir, config_root)
+    try:
+        deployment = config_loader.load_deployment(env_dir, config_root)
+    except config_loader.ConfigError as exc:
+        print(f"COST CHECK (live): could not load {env_dir} — {exc}")
+        return 1
     region = deployment.region
 
     try:

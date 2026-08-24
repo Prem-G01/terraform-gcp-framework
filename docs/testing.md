@@ -3,7 +3,7 @@
 ## What's actually run (and passing, as of this rebuild)
 
 ```bash
-pytest tests/ -v                                    # 44 passed
+pytest tests/ -v                                    # 43 passed
 pytest functions/process-upload/test_main.py -v     # 3 passed, no GCP call
 terraform fmt -check -recursive .                    # clean
 python -m engine.cli validate-all config             # dev/sit/uat/prod all PASS
@@ -59,7 +59,7 @@ approved region too.
 | `test_interpolate_replaces_known_tokens` / `..._resolves_tokens_to_real_values` | `{project_id}`/`{region}`/`{environment}`/`{owner}` interpolation (see `docs/configuration.md`) |
 | `test_force_security_bypasses_a_security_only_error` / `..._refuses_when_non_security_errors_present` | the `--force-security` break-glass override (see `docs/validation.md`) |
 | `test_dry_run_builds_zip_from_local_dir_without_uploading` | `build-function-source` zips the right files and excludes `test_main.py` |
-| `test_live_cost.py` (9 tests) | `engine/live_cost.py`'s shape parsing (`e2-standard-4` accepted, `e2-medium`/custom/unknown rejected), SKU-matching (region match, excludes Custom/Preemptible/Sole-Tenancy variants), and the core+RAM price formula — all with synthetic SKU data, no real API call (see "Live cost check" below) |
+| `test_live_cost.py` (11 tests) | `engine/live_cost.py`'s shape parsing (`e2-standard-4` accepted, `e2-medium`/custom/unknown rejected), SKU-matching (region match, excludes Custom/Preemptible/Sole-Tenancy variants, and the per-family description prefix — `N1 Predefined Instance ...`/`N2D AMD Instance ...`, not a uniform `<Family> Instance ...`, a real bug a code review caught), and the core+RAM price formula including N1's real 3.75 GB/vCPU ratio (not 4, another real bug the same review caught) — all with synthetic SKU data, no real API call (see "Live cost check" below) |
 | `functions/process-upload/test_main.py` (separate suite, not under `tests/`) | the actual Cloud Function handler logic — valid/invalid payloads, no GCP call |
 
 Run `pytest tests/ -v` — no GCP credentials, no network access, and no

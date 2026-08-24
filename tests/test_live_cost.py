@@ -51,7 +51,7 @@ def test_find_component_rate_matches_region_and_excludes_custom_and_preemptible(
         _sku("E2 Instance Core running in Los Angeles", "us-west2", nanos=26000000, sku_id="wrong-region"),
         _sku("E2 Instance Core running in Mumbai", "asia-south1", nanos=26199300, sku_id="right-one"),
     ]
-    result = live_cost._find_component_rate(skus, "E2", "Core", "asia-south1")
+    result = live_cost._find_component_rate(skus, "E2 Instance", "Core", "asia-south1")
     assert result is not None
     price, sku_id = result
     assert sku_id == "right-one"
@@ -60,7 +60,22 @@ def test_find_component_rate_matches_region_and_excludes_custom_and_preemptible(
 
 def test_find_component_rate_returns_none_when_nothing_matches():
     skus = [_sku("N2 Instance Core running in Mumbai", "asia-south1", nanos=1)]
-    assert live_cost._find_component_rate(skus, "E2", "Core", "asia-south1") is None
+    assert live_cost._find_component_rate(skus, "E2 Instance", "Core", "asia-south1") is None
+
+
+def test_find_component_rate_matches_the_real_n1_and_n2d_description_prefixes():
+    """Regression test: an earlier version assumed every family's SKU
+    description read '<Family> Instance ...', but the real Catalog API
+    uses 'N1 Predefined Instance ...' and 'N2D AMD Instance ...' — a
+    plain '<Family> Instance' prefix silently matches nothing for these
+    two, degrading them to the static table despite being listed as
+    live-priced. Verified against the real API for asia-south1 before
+    writing this test."""
+    n1_skus = [_sku("N1 Predefined Instance Core running in Mumbai", "asia-south1", nanos=1)]
+    n2d_skus = [_sku("N2D AMD Instance Core running in Mumbai", "asia-south1", nanos=1)]
+
+    assert live_cost._find_component_rate(n1_skus, live_cost._FAMILY_SKU_PREFIX["n1"], "Core", "asia-south1") is not None
+    assert live_cost._find_component_rate(n2d_skus, live_cost._FAMILY_SKU_PREFIX["n2d"], "Core", "asia-south1") is not None
 
 
 def test_estimate_live_vm_hourly_rate_computes_core_plus_ram():
@@ -78,6 +93,23 @@ def test_estimate_live_vm_hourly_rate_computes_core_plus_ram():
     assert rate.ram_sku_id == "ram-sku"
     expected = 2 * 0.0261993 + 8 * 0.0035107199999999997
     assert abs(rate.hourly_usd - expected) < 1e-6
+
+
+def test_estimate_live_vm_hourly_rate_uses_n1s_3_75gb_per_vcpu_ratio():
+    """Regression test: N1 standard shapes are 3.75 GB RAM per vCPU, not
+    4 like E2/N2/N2D (e.g. real n1-standard-4 = 4 vCPU / 15 GB, not 16).
+    A single global ratio silently overpriced the RAM component for
+    every N1 machine type by ~6.7%."""
+    fake_skus = [
+        _sku("N1 Predefined Instance Core running in Mumbai", "asia-south1", nanos=26199300, sku_id="core-sku"),
+        _sku("N1 Predefined Instance Ram running in Mumbai", "asia-south1", nanos=3510720, sku_id="ram-sku"),
+    ]
+    cache = {live_cost.COMPUTE_ENGINE_SERVICE_ID: fake_skus}
+
+    rate = live_cost.estimate_live_vm_hourly_rate("fake-token", "n1-standard-4", "asia-south1", cache)
+
+    assert rate.vcpus == 4
+    assert rate.ram_gb == 15.0
 
 
 def test_estimate_live_vm_hourly_rate_raises_for_shared_core_shape():

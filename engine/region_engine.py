@@ -19,7 +19,7 @@ def validate_regions(deployment) -> list[Finding]:
     allowed_locations = approved | multi_region | {"global", "us", "eu", "asia"}
     findings: list[Finding] = []
 
-    primary = deployment.raw.get("region", {}).get("primary")
+    primary = deployment.region
     if primary and primary.lower() not in approved:
         findings.append(
             Finding(

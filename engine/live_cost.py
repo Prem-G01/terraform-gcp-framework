@@ -10,14 +10,18 @@ Scope, stated honestly rather than pretended away:
 
 - Only Compute Engine `*-standard-*` shapes (e2-standard-N, n2-standard-N,
   ...) get a real live rate. GCP prices these families from two
-  per-region SKUs — "<Family> Instance Core running in <city>" and
-  "<Family> Instance Ram running in <city>" — matched here by
-  `serviceRegions` (the actual region code, e.g. "asia-south1"), not by
-  parsing the city name out of the description string. vCPU/RAM counts
-  for a `*-standard-N` shape follow GCP's own fixed convention (N vCPU,
-  N*4 GB RAM) rather than a hardcoded per-shape table, so this covers
-  every size in a supported family, not just the ones this repo happens
-  to use today.
+  per-region SKUs, matched here by `serviceRegions` (the actual region
+  code, e.g. "asia-south1"), not by parsing the city name out of the
+  description string. The description PREFIX genuinely differs per
+  family though — "E2 Instance Core running in ...", but "N1
+  *Predefined* Instance Core running in ..." and "N2D *AMD* Instance
+  Core running in ..." — `_FAMILY_SKU_PREFIX` holds the real prefix per
+  family, verified against the live API for asia-south1 rather than
+  assumed uniform. vCPU/RAM counts for a `*-standard-N` shape follow each
+  family's own fixed GB-per-vCPU ratio (`_FAMILY_RAM_PER_VCPU_GB` — 4 for
+  E2/N2/N2D, 3.75 for N1, a real difference, not an approximation) rather
+  than a hardcoded per-shape table, so this covers every size in a
+  supported family, not just the ones this repo happens to use today.
 - Shared-core shapes (e2-micro, e2-small, e2-medium), custom machine
   types, and highmem/highcpu families are NOT resolved live — their
   billing model doesn't map cleanly onto the two-SKU core+RAM formula
@@ -43,11 +47,34 @@ from dataclasses import dataclass
 CLOUD_BILLING_API = "https://cloudbilling.googleapis.com/v1"
 COMPUTE_ENGINE_SERVICE_ID = "6F81-5844-456A"
 
-# GCP's own fixed ratio for every "<family>-standard-N" shape: N vCPU,
-# N * RAM_PER_VCPU_GB of memory. Not specific to any one machine size.
-RAM_PER_VCPU_GB = 4
+# Real Cloud Billing Catalog description prefix per family — NOT uniform
+# across families (verified against the live API for asia-south1; E2/N2
+# are plain "<Family> Instance ...", N1 predefined shapes are "N1
+# Predefined Instance ...", N2D is AMD-based and reads "N2D AMD Instance
+# ..."). Getting this wrong doesn't raise an error — it just finds no
+# match and silently falls back to the static table, so it's worth
+# getting right rather than assuming a uniform pattern.
+_FAMILY_SKU_PREFIX = {
+    "e2": "E2 Instance",
+    "n2": "N2 Instance",
+    "n2d": "N2D AMD Instance",
+    "n1": "N1 Predefined Instance",
+}
 
-SUPPORTED_FAMILIES = ("e2", "n2", "n2d", "n1")
+# GCP's own fixed GB-per-vCPU ratio for every "<family>-standard-N"
+# shape. NOT the same across families — N1 standard shapes are 3.75
+# GB/vCPU, not 4 (e.g. n1-standard-4 = 4 vCPU / 15 GB). Getting this
+# wrong doesn't error either — it silently over/under-prices the RAM
+# component, which is worse than an honest fallback, so it's a per-
+# family table rather than one constant.
+_FAMILY_RAM_PER_VCPU_GB = {
+    "e2": 4,
+    "n2": 4,
+    "n2d": 4,
+    "n1": 3.75,
+}
+
+SUPPORTED_FAMILIES = tuple(_FAMILY_SKU_PREFIX)
 
 
 @dataclass
@@ -55,7 +82,7 @@ class LiveRate:
     machine_type: str
     region: str
     vcpus: int
-    ram_gb: int
+    ram_gb: float  # N1's 3.75 GB/vCPU ratio produces non-integer totals (e.g. n1-standard-1 = 3.75)
     hourly_usd: float
     core_sku_id: str
     ram_sku_id: str
@@ -138,10 +165,12 @@ def _unit_price_usd(sku: dict) -> float:
     return int(rate.get("units", 0)) + rate.get("nanos", 0) / 1e9
 
 
-def _find_component_rate(skus: list[dict], family_label: str, component: str, region: str) -> tuple[float, str] | None:
-    """component: 'Core' or 'Ram'. Matches OnDemand, non-preemptible,
-    non-custom, non-sole-tenancy SKUs for the given region code."""
-    prefix = f"{family_label} Instance {component} running in"
+def _find_component_rate(skus: list[dict], sku_prefix: str, component: str, region: str) -> tuple[float, str] | None:
+    """component: 'Core' or 'Ram'. sku_prefix: this family's real
+    description prefix from _FAMILY_SKU_PREFIX, e.g. 'N1 Predefined
+    Instance'. Matches OnDemand, non-preemptible, non-custom,
+    non-sole-tenancy SKUs for the given region code."""
+    prefix = f"{sku_prefix} {component} running in"
     for sku in skus:
         cat = sku.get("category", {})
         if cat.get("usageType") != "OnDemand":
@@ -157,9 +186,6 @@ def _find_component_rate(skus: list[dict], family_label: str, component: str, re
     return None
 
 
-_FAMILY_LABELS = {"e2": "E2", "n2": "N2", "n2d": "N2D", "n1": "N1"}
-
-
 def estimate_live_vm_hourly_rate(token: str, machine_type: str, region: str, skus_cache: dict[str, list[dict]]) -> LiveRate:
     """Raises LiveCostError with a specific, honest reason on anything
     that isn't a supported *-standard-N shape or that the Catalog API
@@ -172,23 +198,23 @@ def estimate_live_vm_hourly_rate(token: str, machine_type: str, region: str, sku
             f"(supported families: {', '.join(SUPPORTED_FAMILIES)}) — falling back to the static table."
         )
     family, vcpus = parsed
-    family_label = _FAMILY_LABELS[family]
+    sku_prefix = _FAMILY_SKU_PREFIX[family]
 
     if COMPUTE_ENGINE_SERVICE_ID not in skus_cache:
         skus_cache[COMPUTE_ENGINE_SERVICE_ID] = _list_skus(token, COMPUTE_ENGINE_SERVICE_ID)
     skus = skus_cache[COMPUTE_ENGINE_SERVICE_ID]
 
-    core = _find_component_rate(skus, family_label, "Core", region)
-    ram = _find_component_rate(skus, family_label, "Ram", region)
+    core = _find_component_rate(skus, sku_prefix, "Core", region)
+    ram = _find_component_rate(skus, sku_prefix, "Ram", region)
     if core is None or ram is None:
         raise LiveCostError(
-            f"No live {family_label} Core/Ram SKU found for region '{region}' — "
+            f"No live '{sku_prefix} .../Ram' SKU found for region '{region}' — "
             "either this region doesn't offer this family, or the Catalog API's naming changed."
         )
 
     core_rate, core_sku_id = core
     ram_rate, ram_sku_id = ram
-    ram_gb = vcpus * RAM_PER_VCPU_GB
+    ram_gb = vcpus * _FAMILY_RAM_PER_VCPU_GB[family]
     hourly = vcpus * core_rate + ram_gb * ram_rate
 
     return LiveRate(

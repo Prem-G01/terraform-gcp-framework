@@ -89,6 +89,12 @@ These are the values every environment's `terraform init -backend-config=`
 and `.github/workflows/*.yml` `ENVIRONMENTS_JSON` repository variable need
 (see [docs/cicd.md](cicd.md)).
 
+`bootstrap/` was actually applied a second time that same day, so
+`environments/dev` could be applied against a real backend too — see
+[docs/troubleshooting.md](troubleshooting.md) "environments/dev applied
+for real" for what that surfaced (real bugs, real orphaned-resource
+imports) and the full second teardown.
+
 ## Why one state file per environment for now
 
 The spec this rebuild followed asked for layer-based state separation

@@ -105,6 +105,141 @@ resources:
     assert "no source.local_dir set" in capsys.readouterr().out
 
 
+def test_dry_run_does_not_require_gcloud_on_path(tmp_path, monkeypatch):
+    """Regression test: an earlier version resolved gcloud unconditionally
+    at the top of the function, which would have broken --dry-run in any
+    environment without gcloud installed (e.g. a bare CI container) even
+    though dry-run never actually invokes it."""
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "main.py").write_text("def handler(request): pass\n", encoding="utf-8")
+
+    env_dir = _make_env(tmp_path)
+    (env_dir / "deployment.yaml").write_text(f"""\
+apiVersion: platform.gcp/v1
+kind: Deployment
+metadata:
+  name: fixture
+  environment: dev
+  owner: devops
+project:
+  id: prj-dg-devops-test
+region:
+  primary: asia-south1
+resources:
+  cloudfunctions:
+    enabled: true
+    instances:
+      my-fn:
+        location: asia-south1
+        runtime: python312
+        entry_point: handler
+        source:
+          local_dir: {source_dir.as_posix()}
+          bucket: some-bucket
+          object: fn/my-fn.zip
+        service_account:
+          name: fn-sa
+""", encoding="utf-8")
+
+    rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=True))
+
+    assert rc == 0
+
+
+def test_real_upload_resolves_gcloud_via_shutil_which(tmp_path, monkeypatch):
+    """Regression test: a bare "gcloud" in subprocess.run(["gcloud", ...])
+    fails on Windows with FileNotFoundError — the real executable there is
+    gcloud.CMD, and subprocess without shell=True doesn't search PATHEXT
+    the way a shell does. Found running this for real; fixed to resolve
+    the executable via shutil.which first."""
+    monkeypatch.setattr("shutil.which", lambda name: r"C:\fake\gcloud.CMD" if name == "gcloud" else None)
+
+    calls = []
+    monkeypatch.setattr("subprocess.run", lambda args, **kwargs: calls.append(args))
+
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "main.py").write_text("def handler(request): pass\n", encoding="utf-8")
+
+    env_dir = _make_env(tmp_path)
+    (env_dir / "deployment.yaml").write_text(f"""\
+apiVersion: platform.gcp/v1
+kind: Deployment
+metadata:
+  name: fixture
+  environment: dev
+  owner: devops
+project:
+  id: prj-dg-devops-test
+region:
+  primary: asia-south1
+resources:
+  cloudfunctions:
+    enabled: true
+    instances:
+      my-fn:
+        location: asia-south1
+        runtime: python312
+        entry_point: handler
+        source:
+          local_dir: {source_dir.as_posix()}
+          bucket: some-bucket
+          object: fn/my-fn.zip
+        service_account:
+          name: fn-sa
+""", encoding="utf-8")
+
+    rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=False))
+
+    assert rc == 0
+    assert len(calls) == 1
+    assert calls[0][0] == r"C:\fake\gcloud.CMD"  # the resolved path, never the bare "gcloud" string
+
+
+def test_real_upload_fails_cleanly_when_gcloud_missing(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "main.py").write_text("def handler(request): pass\n", encoding="utf-8")
+
+    env_dir = _make_env(tmp_path)
+    (env_dir / "deployment.yaml").write_text(f"""\
+apiVersion: platform.gcp/v1
+kind: Deployment
+metadata:
+  name: fixture
+  environment: dev
+  owner: devops
+project:
+  id: prj-dg-devops-test
+region:
+  primary: asia-south1
+resources:
+  cloudfunctions:
+    enabled: true
+    instances:
+      my-fn:
+        location: asia-south1
+        runtime: python312
+        entry_point: handler
+        source:
+          local_dir: {source_dir.as_posix()}
+          bucket: some-bucket
+          object: fn/my-fn.zip
+        service_account:
+          name: fn-sa
+""", encoding="utf-8")
+
+    rc = cmd_build_function_source(argparse.Namespace(env_dir=env_dir, function=None, dry_run=False))
+
+    assert rc == 1
+    assert "gcloud not found on PATH" in capsys.readouterr().out
+
+
 def test_unknown_function_name_errors(tmp_path):
     env_dir = _make_env(tmp_path)
     (env_dir / "deployment.yaml").write_text("""\

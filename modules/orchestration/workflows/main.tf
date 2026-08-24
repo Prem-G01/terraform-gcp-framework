@@ -42,4 +42,6 @@ resource "google_workflows_workflow" "workflow" {
 
   source_contents = each.value.source_contents
 
+  deletion_protection = lookup(each.value, "deletion_protection", true)
+
 }

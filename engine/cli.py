@@ -184,10 +184,24 @@ def cmd_build_function_source(args: argparse.Namespace) -> int:
 
     Deliberately shells out to `gcloud storage cp` rather than adding
     google-cloud-storage as a Python dependency — this repo's toolchain
-    already requires gcloud for everything else (bootstrap, deploy)."""
+    already requires gcloud for everything else (bootstrap, deploy).
+    Resolved via shutil.which rather than passed as a bare "gcloud" —
+    on Windows the real executable is gcloud.CMD, and subprocess.run
+    without shell=True can't find it through PATH the way a shell does;
+    a bare "gcloud" here previously failed on Windows with
+    FileNotFoundError, silently after the zip had already built (a real
+    bug found running this for real)."""
+    import shutil
     import subprocess
     import zipfile
     import tempfile
+
+    gcloud = None
+    if not args.dry_run:
+        gcloud = shutil.which("gcloud")
+        if gcloud is None:
+            print("gcloud not found on PATH — required to upload Cloud Function source (not needed for --dry-run).")
+            return 1
 
     env_dir = Path(args.env_dir)
     deployment = config_loader.load_deployment(env_dir, env_dir.parent.parent)
@@ -229,7 +243,7 @@ def cmd_build_function_source(args: argparse.Namespace) -> int:
             if args.dry_run:
                 print(f"{name}: --dry-run, not actually uploading. Zip built at {zip_path} (deleted on exit).")
                 continue
-            subprocess.run(["gcloud", "storage", "cp", str(zip_path), dest], check=True)
+            subprocess.run([gcloud, "storage", "cp", str(zip_path), dest], check=True)
 
     return 0
 

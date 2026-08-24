@@ -87,6 +87,20 @@ enable it in every environment (`resources.org_policies.enabled: true`),
 loosen an individual field only with a deliberate, reviewable
 `deployment.yaml` change.
 
+**A real permission gap found applying this for real (2026-08-19)**:
+`google_org_policy_policy` needs `orgpolicy.policies.create`
+(`roles/orgpolicy.policyAdmin` or broader) on whoever's identity applies
+it — a real human account with broad-looking access elsewhere in a
+project (create VPCs, SAs, IAM bindings, ...) is not guaranteed to have
+this specific permission, since it's narrower and more sensitive than
+general project resource administration. Confirm the applying identity
+actually has it before assuming `org_policies` will apply cleanly — see
+[docs/troubleshooting.md](troubleshooting.md) "environments/dev applied
+for real" for what this looked like in practice (a real `403:
+IAM_PERMISSION_DENIED`, distinct from and only visible after fixing the
+separate ADC quota-project routing issue documented in the same
+section).
+
 ## Identity-Aware Proxy
 
 `modules/security/iap` replaces "trusted because it came from the right

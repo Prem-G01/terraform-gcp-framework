@@ -5,15 +5,21 @@
 `bootstrap/` and `environments/dev` were both applied for real against
 `prj-dg-devops-test` on 2026-08-18 (a since-superseded single-shared-SA
 design), then both fully destroyed the same day. `bootstrap/` was
-rewritten to the current dedicated-per-environment design, applied for
-real again on 2026-08-19, then **torn down again the same day at
-explicit user request** — see "Bootstrap re-applied (per-environment
-design), 2026-08-19" and "Torn down again the same day, 2026-08-19"
-below. As of that last section, **`prj-dg-devops-test` has nothing left
-that this repo created**, verified directly against GCP, not just
-Terraform state. `environments/dev` has never been applied with the
-current per-environment bootstrap design. `sit`/`uat`/`prod` and CI/CD
-triggers have never been applied. Read this before calling anything here
+rewritten to the current dedicated-per-environment design; both it and
+`environments/dev` (117-resource plan, real bugs found and fixed — see
+"environments/dev applied for real" below) were applied for real again
+on 2026-08-19, then **both fully torn down again the same day at
+explicit user request**, including the `dev-vpc`/PSA-peering orphan that
+had been stuck since 2026-08-18 — see "Bootstrap re-applied
+(per-environment design), 2026-08-19" and "environments/dev applied for
+real — real bugs found, full teardown, 2026-08-19" below. As of that
+last section, **`prj-dg-devops-test` has nothing left that this repo
+created** (the KMS keyring/keys are the one deliberate exception — GCP
+cannot hard-delete them, see below), verified directly against GCP, not
+just Terraform state. `org_policies` was never successfully created for
+real in any apply — see the permission-gap note below. `sit`/`uat`/`prod`
+and CI/CD triggers have never been applied. Read this before calling
+anything here
 "production ready," and read the dated section headers in order — an
 earlier section can be fully superseded by a later one.
 
@@ -349,8 +355,10 @@ owns it before it surprises the next person.
 backup immediately after — the "still pending" backup step from the
 2026-08-18 incident, actually done this time.
 
-**Not yet done**: `environments/dev` has not been re-applied against
-this bootstrap. WIF is still off (`enable_workload_identity_federation =
+**Update**: `environments/dev` *was* applied against this bootstrap
+later the same day — see "environments/dev applied for real — real bugs
+found, full teardown, 2026-08-19" below, including the full teardown of
+both stacks. WIF is still off (`enable_workload_identity_federation =
 false` — no `github_repository` value yet). `bootstrap/grants/` has not
 been applied against any real `sit`/`uat`/`prod` project.
 
@@ -376,6 +384,134 @@ above is genuinely active in this shared test project, with its own
 `tf-plan-audit-platform`/`tf-apply-audit-platform` service accounts and a
 second bucket (`tfstate-prj-dg-apps-dev`) — someone else's real,
 growing Terraform setup, not touched, not related to this repo.
+
+## environments/dev applied for real — real bugs found, full teardown, 2026-08-19
+
+Same day as the bootstrap re-apply above, `environments/dev` was applied
+for real against the same bootstrap (117-resource plan: VPC, GKE, Cloud
+SQL, Memorystore, KMS, Cloud Functions, all four zero-trust modules,
+everything). This surfaced four genuinely new, previously-undiscovered
+issues — none of them found by `plan`, `validate`, or any mock test,
+exactly the gap this apply existed to close:
+
+1. **ADC quota-project routing.** `google_org_policy_policy` (and
+   presumably other newer APIs) rejected every call with `Error 403:
+   ... requires a quota project` — even after `gcloud auth
+   application-default set-quota-project prj-dg-devops-test`, which
+   updates the ADC file's `quota_project_id` but doesn't make Terraform's
+   Google provider actually use it. Fixed by adding
+   `user_project_override = true` / `billing_project = var.project_id`
+   to every `provider "google" {}` block
+   (`environments/{dev,sit,uat,prod}/provider.tf`,
+   `bootstrap/grants/main.tf`) — see those files for the full comment.
+   Only matters for a human running via ADC; a service account's
+   identity doesn't have this ambiguity.
+
+2. **`build-function-source` was silently broken on Windows.**
+   `engine/cli.py`'s `cmd_build_function_source` called
+   `subprocess.run(["gcloud", "storage", "cp", ...])` — on Windows the
+   real executable is `gcloud.CMD`, and `subprocess.run` without
+   `shell=True` doesn't search `PATHEXT` the way an interactive shell
+   does, so this raised `FileNotFoundError` after already zipping the
+   source. Fixed by resolving the executable via `shutil.which("gcloud")`
+   first (skipped entirely for `--dry-run`, which never needs it). 4 new
+   regression tests in `tests/test_build_function_source.py`. A real,
+   previously-undiscovered cross-platform bug — nothing in this repo's
+   test suite runs on a real Windows shell with `subprocess.run` in the
+   loop, so nothing caught it until an actual apply did.
+
+3. **The `orgpolicy.policies.create` permission gap.** Even with quota
+   routing fixed, the account applying this (a human via ADC, not a
+   service account) turned out to only have `roles/datastore.user`
+   directly bound at the project level — everything else worked via
+   inherited group/org roles this session can't fully see, and none of
+   them included org-policy admin. The user chose to grant
+   `roles/orgpolicy.policyAdmin` themselves rather than skip
+   `org_policies` for this pass, but a full teardown was requested before
+   that grant was confirmed — **`org_policies` was never successfully
+   created for real in this apply.** Every other resource type was.
+
+4. **The original 2026-08-18 orphans collided with fresh creation, and
+   are now finally resolved.** `dev-vpc`, the `app-keyring` KMS keyring
+   and its 4 crypto keys, the `google-managed-services-dev` Private
+   Service Access address, and — the one that was stuck for over an hour
+   during the 2026-08-18 teardown and never confirmed released — the
+   `google_service_networking_connection` peering itself, all still
+   existed for real and collided with this fresh `apply` (`409: already
+   exists`). Investigated each before acting: these are this repo's own
+   leftovers, not another project's resources (unlike the `audit-
+   platform` bucket collision), so the correct fix was `terraform import`
+   for all of them, not renaming or working around. All five imported
+   cleanly on the first attempt, including the previously-stuck PSA
+   connection — whatever GCP-side condition
+   (`FLOW_SN_DC_RESOURCE_PREVENTING_DELETE_CONNECTION`) was blocking it
+   in August had resolved by the time this ran. **The full teardown
+   below re-destroyed all five for real** — `dev-vpc` and the PSA
+   peering are confirmed gone from `prj-dg-devops-test` for the first
+   time all session; the KMS keyring and its keys, as always, are not
+   (see below).
+
+Separately, an earlier partial `apply` attempt (before all four fixes
+above landed) left two `google_logging_project_bucket_config` buckets
+(`app-logs`, `audit-logs`) stuck in GCP's `DELETE_REQUESTED` state after
+a failed update mid-creation (`Error 400: Buckets must be in an ACTIVE
+state to be modified`) and Terraform marked them tainted. Fixed with
+`gcloud logging buckets undelete` (restored both to `ACTIVE`) followed
+by `terraform untaint` — letting Terraform destroy+recreate them instead
+would have just re-triggered the same stuck-delete state.
+
+### Full teardown, same session
+
+At explicit user request, both `environments/dev` (102 resources — the
+partial-apply state after the fixes above, well short of the full
+117-resource plan since `org_policies` never got past the permission
+gap and several resources were only reached via later plan/apply
+iterations) and `bootstrap/` (56 resources) were destroyed. Same
+`deletion_protection`/`prevent_destroy`/`force_destroy` pattern as the
+2026-08-18 teardown, hit again here for the same underlying reason (these
+are deliberate secure defaults, not bugs):
+
+- **`google_kms_crypto_key.prevent_destroy`**: temporarily flipped to
+  `false` in `modules/security/kms/main.tf`, restored to `true`
+  immediately after — this is now the *second* time this exact lifecycle
+  flag needed a temporary flip for an explicitly-requested teardown; GCP
+  still has no API to hard-delete a KMS key/keyring regardless, so this
+  only ever removes them from Terraform state, never the real resource
+  (`app-keyring` and its 4 keys are still real in
+  `prj-dg-devops-test` right now).
+- **`deletion_protection` on GKE, Cloud SQL, 2 BigQuery tables, and the
+  workflow**: temporarily set to `false` via `config/environments/dev
+  /deployment.yaml` (using the `--force-security` break-glass override
+  for the one ERROR-severity finding this triggered,
+  `SEC_SQL_NO_DELETION_PROTECTION` — audited in `override-audit.jsonl`,
+  same sanctioned mechanism as 2026-08-18), applied with `-target` to
+  update just those resources in place first, then reverted immediately
+  after the destroy completed. **Real gap found and fixed while doing
+  this**: `modules/orchestration/workflows/main.tf` never exposed
+  `deletion_protection` at all — the `google_workflows_workflow`
+  resource defaults to `true` at the provider level with no way to turn
+  it off through this platform's config, inconsistent with how `gke`/
+  `bigquery` already handle the same pattern. Fixed by adding
+  `deletion_protection = lookup(each.value, "deletion_protection", true)`
+  to the module, matching the existing convention.
+- **`force_destroy` on `google_storage_bucket`**: `app-storage` (had
+  real objects) needed the same `false` → `true` → `false` config
+  round-trip as the buckets above; `tf-backup` (dev) and `logs`/`state`
+  (bootstrap) all separately hit the *original* 2026-08-18 finding again
+  — `force_destroy = true` doesn't reliably empty a versioned bucket with
+  accumulated history, worked around identically with direct `gcloud
+  storage rm --recursive` + `gcloud storage buckets delete`.
+
+**Verified against real GCP after, not just Terraform state**: no
+`tf-plan-<env>`/`tf-apply-<env>` service accounts, no
+`-tfstate-v2`/`-tf-artifacts`/`-logs` buckets, and — checked specifically
+because it was the one thing never confirmed gone all session —
+**no `dev-vpc` network at all**. `app-keyring` and its 4 crypto keys are
+still real (expected, unavoidable). `config/environments/dev
+/deployment.yaml` and `modules/security/kms/main.tf` are back to their
+secure-default state; `git diff` after this session shows only the
+genuine fixes (provider quota routing, `shutil.which`, workflows
+`deletion_protection`), not any of the temporary teardown overrides.
 
 ## Common issues
 

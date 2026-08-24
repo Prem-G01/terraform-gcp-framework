@@ -2,14 +2,34 @@
 
 ## Secure by default
 
-`config/global/defaults.yaml` `security_defaults` sets the platform-wide
-posture (no public IPs, OS Login on, Shielded VM fully on, uniform bucket
-access + enforced public-access-prevention, Cloud SQL private-only +
-deletion protection, KMS `prevent_destroy` + 90-day rotation). These are
-applied as Terraform fallbacks (`lookup(each.value, "field", secure_default)`
-inside `modules/*/main.tf`) — an engineer can still override them per
-instance in `deployment.yaml`, but doing so is exactly what the security
-engine (below) exists to catch.
+`config/global/defaults.yaml` `security_defaults` documents the
+platform-wide posture (no public IPs, OS Login on, Shielded VM fully on,
+uniform bucket access + enforced public-access-prevention, Cloud SQL
+private-only + deletion protection, KMS `prevent_destroy` + 90-day
+rotation). **No module actually reads this file** — `security_defaults`
+is real YAML, parsed by `engine/config_loader.GlobalConfig`, but grep
+confirms it's consumed in exactly one place in the whole engine
+(`SEC_SECRET_TOO_SHORT`'s `min_length` check). Every module instead
+carries its own hardcoded literal matching each `security_defaults`
+value (`lookup(each.value, "field", true)`, `try(each.value.nested.field,
+false)`, etc.) — the same *outcome*, but two independent copies of the
+truth that could drift, not one file modules actually reference.
+
+**A real, latent gap found auditing this (2026-08-19)**: several of
+those per-module fallbacks didn't exist at all — `uniform_bucket_level
+_access`/`public_access_prevention`/`versioning.enabled` in `modules
+/storage/buckets`, `network.public_ip`/`shielded_vm.*` in `modules
+/compute/vm`, `network.ipv4_enabled` in `modules/database/cloudsql` were
+all hard-required `each.value.field` references with no fallback
+whatsoever — the same shape as the `cloudrun.deletion_protection` bug a
+code review caught earlier. Every current environment's config happens
+to set these fields explicitly, which is exactly why it went unnoticed;
+a future config author omitting any of them would have hit a cryptic
+Terraform "Unsupported attribute" error at `plan` time instead of a
+clean validation message, or worse, silently gotten whatever
+provider-level default GCP applies instead of this platform's intended
+one. Fixed to `lookup()`/`try()` with the documented secure value, same
+as the fields that already had it.
 
 **`deletion_protection`, specifically**, exists on 8 of this platform's
 resource types (audited directly against the installed provider schema,

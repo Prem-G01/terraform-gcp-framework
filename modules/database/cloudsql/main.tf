@@ -42,7 +42,13 @@ resource "google_sql_database_instance" "cloudsql" {
 
     ip_configuration {
 
-      ipv4_enabled = each.value.network.ipv4_enabled
+      # Secure-by-default fallback matching
+      # security_defaults.database.public_ip (false) — this platform's
+      # own copy of that value, not a live reference to
+      # security_defaults.yaml (see docs/security.md). Found missing
+      # entirely while auditing for the same class of gap as the
+      # deletion_protection fix in modules/compute/cloudrun.
+      ipv4_enabled = try(each.value.network.ipv4_enabled, false)
 
       private_network = var.vpcs[
 

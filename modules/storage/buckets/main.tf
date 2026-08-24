@@ -12,15 +12,25 @@ resource "google_storage_bucket" "bucket" {
 
   force_destroy = each.value.force_destroy
 
-  uniform_bucket_level_access = each.value.uniform_bucket_level_access
+  # Secure-by-default fallbacks matching config/global/defaults.yaml
+  # security_defaults.storage — that file is NOT actually read here (no
+  # module in this platform reads security_defaults.yaml directly; see
+  # docs/security.md), so these literals are this module's own copy of
+  # the same values, not a live reference. Found missing entirely (every
+  # field a hard-required each.value.X reference, no fallback at all)
+  # while auditing for the same class of gap as the deletion_protection
+  # fix in modules/compute/cloudrun — every environment's config
+  # currently happens to set these explicitly, which is exactly why this
+  # had gone unnoticed.
+  uniform_bucket_level_access = lookup(each.value, "uniform_bucket_level_access", true)
 
-  public_access_prevention = each.value.public_access_prevention
+  public_access_prevention = lookup(each.value, "public_access_prevention", "enforced")
 
   labels = each.value.labels
 
   versioning {
 
-    enabled = each.value.versioning.enabled
+    enabled = try(each.value.versioning.enabled, true)
 
   }
 

@@ -1,0 +1,59 @@
+apiVersion: platform.gcp/v1
+kind: Deployment
+metadata:
+  name: fixture
+  environment: dev
+  owner: devops
+project:
+  id: prj-dg-devops-test
+region:
+  primary: asia-south1
+resources:
+  vpc:
+    enabled: true
+    instances:
+      test-vpc:
+        auto_create_subnetworks: false
+        routing_mode: GLOBAL
+  subnet:
+    enabled: true
+    instances:
+      test-subnet:
+        vpc: test-vpc
+        region: asia-south1
+        cidr: 10.20.1.0/24
+  service_accounts:
+    enabled: true
+    instances:
+      test-sa:
+        account_id: test-service-account
+        display_name: Test SA
+        description: Test
+        roles:
+          - roles/logging.logWriter
+  vm:
+    enabled: true
+    instances:
+      test-vm:
+        # asia-south1 is an approved region, but "z" is not an approved
+        # zone_suffix (config/global/regions.yaml only lists a/b/c) — this
+        # must be rejected, not silently accepted just because the region
+        # prefix checks out.
+        zone: asia-south1-z
+        machine_type: e2-medium
+        subnet: test-subnet
+        service_account:
+          name: test-sa
+          scopes: [cloud-platform]
+        boot_disk:
+          image: projects/debian-cloud/global/images/family/debian-12
+          size_gb: 50
+          type: pd-balanced
+        network:
+          public_ip: false
+        shielded_vm:
+          secure_boot: true
+          vtpm: true
+          integrity_monitoring: true
+        metadata:
+          enable-oslogin: "TRUE"

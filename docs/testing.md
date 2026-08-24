@@ -3,7 +3,7 @@
 ## What's actually run (and passing, as of this rebuild)
 
 ```bash
-pytest tests/ -v                                    # 48 passed
+pytest tests/ -v                                    # 51 passed
 pytest functions/process-upload/test_main.py -v     # 3 passed, no GCP call
 terraform fmt -check -recursive .                    # clean
 python -m engine.cli validate-all config             # dev/sit/uat/prod all PASS
@@ -57,6 +57,7 @@ approved region too.
 | `test_dependency_cycle_is_detected` | a synthetic `a requires b, b requires a` graph is caught |
 | `test_real_dependency_graph_has_no_cycles` | the real `config/global/dependencies.yaml` is acyclic |
 | `test_yaml_syntax_error_is_reported` | malformed YAML raises `ConfigError` rather than crashing |
+| `test_region_engine.py` (3 tests) | `region_engine.py`'s zone validation — a real gap found 2026-08-24: `config/global/regions.yaml`'s `zone_suffixes` was defined but never actually read, so a zone like `asia-south1-z` passed just because its region prefix was approved, ignoring that `z` was never an approved suffix (only a/b/c are); now enforced and locked in by `test_zone_with_unapproved_suffix_is_rejected` |
 | `test_real_modules_have_no_hardcoded_project_ids_or_cidrs` | `modules/`, `platform/`, `bootstrap/` are clean per the hardcode scanner |
 | `test_scanner_catches_an_injected_hardcoded_project_id` | the scanner actually detects a planted violation |
 | `test_scanner_respects_allow_marker` | `# hardcode-allow:` suppression works |

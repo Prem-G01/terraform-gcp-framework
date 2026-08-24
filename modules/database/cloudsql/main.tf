@@ -10,7 +10,15 @@ resource "google_sql_database_instance" "cloudsql" {
 
   database_version = each.value.database_version
 
-  deletion_protection = each.value.deletion_protection
+  # Defaults to true, matching engine/security_engine.py's
+  # SEC_SQL_NO_DELETION_PROTECTION check (`sql.get("deletion_protection",
+  # True)`) — that check only flags an *explicit* `false`, so an omitted
+  # field must resolve the same way here or a config that passes
+  # validation cleanly could still crash `terraform plan` with a raw
+  # "Unsupported attribute" error. Found 2026-08-24: docs/security.md
+  # already documented this lookup() as done; the code never actually
+  # had it.
+  deletion_protection = lookup(each.value, "deletion_protection", true)
 
 
 
@@ -32,9 +40,17 @@ resource "google_sql_database_instance" "cloudsql" {
 
     backup_configuration {
 
-      enabled = each.value.backup.enabled
+      # `backup` was, like deletion_protection above, a hard-required
+      # each.value reference with no fallback and no schema/engine-level
+      # guarantee it's set (config/schema/deployment.schema.json only
+      # validates the generic resourceBlock shape, not per-resource
+      # internals) — same gap class as the 2026-08-19 security_defaults
+      # audit, found auditing modules the CI/CD-focused review hadn't
+      # reached yet (2026-08-24). Defaults match every real environment's
+      # actual config value.
+      enabled = lookup(lookup(each.value, "backup", {}), "enabled", true)
 
-      start_time = each.value.backup.start_time
+      start_time = lookup(lookup(each.value, "backup", {}), "start_time", "00:00")
 
     }
 

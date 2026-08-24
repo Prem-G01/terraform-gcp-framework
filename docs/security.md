@@ -54,6 +54,25 @@ Only `cloudsql`'s is enforced at ERROR severity
 default, not a validated policy, so an explicit `false` in
 `deployment.yaml` is allowed and not flagged for the rest.
 
+**A real gap between this doc and the code, found 2026-08-24**: this
+section already described `cloudsql`'s `deletion_protection` as going
+through `lookup(each.value, "deletion_protection", true)` — but
+`modules/database/cloudsql/main.tf` never actually had that lookup, only
+a hard-required `each.value.deletion_protection` reference. Because
+`SEC_SQL_NO_DELETION_PROTECTION` (above) only flags an *explicit*
+`false` (`sql.get("deletion_protection", True)` in
+`engine/security_engine.py`), a config that omitted the field entirely
+would pass validation cleanly and then crash `terraform plan` with a raw
+"Unsupported attribute" error — the exact failure mode the 2026-08-19
+audit's fixes elsewhere were meant to prevent. Same audit pass also
+found `cloudsql.backup` (`enabled`/`start_time`) had never been covered
+at all — not by this doc, not by any lookup/try. Both are now fixed
+(`lookup(each.value, "deletion_protection", true)`;
+`lookup(lookup(each.value, "backup", {}), "enabled"/"start_time", ...)`
+matching every real environment's actual config value), with regression
+coverage in
+`modules/database/cloudsql/tests/deletion_protection_and_backup_defaults.tftest.hcl`.
+
 ## Enforced by the validation engine
 
 `config/global/security.yaml` is the rule catalogue — id, which resource

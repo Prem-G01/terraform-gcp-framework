@@ -25,6 +25,11 @@ module "naming" {
   source       = "../modules/shared/naming"
   organization = local.defaults_yaml.organization
   naming       = local.naming_yaml.naming
+  environment  = var.environment
+  instance_keys = {
+    vm  = keys(local.instances.vm)
+    sql = keys(local.instances.cloudsql)
+  }
 }
 
 module "apis" {
@@ -102,6 +107,7 @@ module "vm" {
   config           = { vms = local.instances.vm }
   subnets          = try(module.subnet[0].self_links, {})
   service_accounts = try(module.service_accounts[0].emails, {})
+  generated_names  = try(module.naming.generated_names.vm, {})
   depends_on = [
     module.apis, module.vpc, module.subnet, module.firewall, module.nat, module.service_accounts,
   ]
@@ -116,13 +122,14 @@ module "secrets" {
 }
 
 module "cloudsql" {
-  count      = local.enabled.cloudsql ? 1 : 0
-  source     = "../modules/database/cloudsql"
-  project_id = var.project_id
-  config     = { cloudsql = local.instances.cloudsql }
-  vpcs       = try(module.vpc[0].self_links, {})
-  passwords  = try(module.secrets[0].passwords, {})
-  depends_on = [module.apis, module.vpc, module.private_service_access, module.secrets]
+  count           = local.enabled.cloudsql ? 1 : 0
+  source          = "../modules/database/cloudsql"
+  project_id      = var.project_id
+  config          = { cloudsql = local.instances.cloudsql }
+  vpcs            = try(module.vpc[0].self_links, {})
+  passwords       = try(module.secrets[0].passwords, {})
+  generated_names = try(module.naming.generated_names.sql, {})
+  depends_on      = [module.apis, module.vpc, module.private_service_access, module.secrets]
 }
 
 module "buckets" {

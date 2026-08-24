@@ -93,12 +93,14 @@ these run with no credentials, no network access, and touch nothing real:
 | `modules/artifact_registry/tests/cleanup_policy.tftest.hcl` | `cleanup_policy` itself is optional (no crash when omitted); `keep_count` — set to 20/10/10 across the real dev config but previously silently ignored entirely — now actually produces a `KEEP`/`most_recent_versions` cleanup policy, verified against the installed provider schema (2026-08-24) |
 | `modules/iam/deploy_roles/tests/role_coverage.tftest.hcl` | every role `apply_sa_roles` needs, spot-checked against 10 real gaps an IAM audit found the same day (GKE, Cloud Tasks queue management, Memorystore, PSA, VPC-SC, Binary Authorization, Cloud Functions gen2, Document AI, IAP, Org Policies), plus a guard that `roles/editor`/`roles/owner` never creep in — a zero-resource module (locals/outputs only), no `mock_provider` needed |
 | `bootstrap/grants/tests/grants.tftest.hcl` | the stack that actually wires cross-project IAM for sit/uat/prod — SA emails resolve against `central_project_id` not `spoke_project_id`, every binding targets the spoke project, binding counts match `deploy_roles` exactly, and the log sink is correctly gated and targets the real bucket; had zero coverage before, all 4 passed on the first run (2026-08-24) |
+| `modules/shared/naming/tests/generated_names.tftest.hcl` | real name generation for `vm`/`sql` (added 2026-08-24 — see docs/configuration.md "Generated names"): interpolates `naming.yaml`'s pattern templates correctly, always lowercases the result regardless of `organization.company`'s own casing (a real GCP plan failed outright on an uppercase-cased name before this), empty `instance_keys` produces an empty map, and `separator`/`company` pass-through outputs are unchanged; zero coverage before this |
 
 Run from the module directory itself: `cd platform && terraform test`, or
 `cd modules/database/cloudsql && terraform test` (each needs its own
 `terraform init` first, same as any root module — `platform/`,
-`cloudsql`, `workload_identity`, `buckets`, `vm`, `kms`, and `secrets`
-are the ones set up to run standalone).
+`cloudsql`, `workload_identity`, `buckets`, `vm`, `kms`, `secrets`,
+`deploy_roles`, `bootstrap/grants`, and `shared/naming` are the ones set
+up to run standalone).
 
 **Why so little coverage, out of 33 resource types?** These exist to
 demonstrate the pattern and to lock in real bugs/regressions this rebuild

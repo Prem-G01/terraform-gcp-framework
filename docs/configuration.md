@@ -128,6 +128,38 @@ module whose `count` drops to 0). Anything that `requires` a disabled type
 (see [docs/dependencies.md](dependencies.md)) fails validation before
 Terraform ever runs.
 
+## Generated names
+
+Most modules use `lookup(each.value, "name", each.key)` — if an instance
+doesn't set an explicit `name`, its GCP resource name falls back to its
+config map key (e.g. `app-vm-01`). For `vm` and `cloudsql` specifically,
+that fallback is instead a real generated name following
+`config/global/naming.yaml`'s `naming.pattern.vm`/`.sql` template
+(`{company}-{environment}-vm-{name}`, e.g. `dg-dev-vm-app-vm-01`) —
+computed by `modules/shared/naming` and threaded through
+`platform/main.tf`'s `module "naming"` → `module "vm"`/`module "cloudsql"`
+`generated_names` variable. Always lowercase, regardless of
+`organization.company`'s own casing — `google_compute_instance.name`
+requires it (`^[a-z]([-a-z0-9]*[a-z0-9])?$`), found against a real GCP
+plan on 2026-08-24 when `company: "DG"` produced an invalid uppercase
+name.
+
+**Scope, deliberately**: only `vm`/`sql` are wired up — the only two
+resource types `naming.yaml` defines a dedicated pattern for.
+`naming.pattern.default` (the generic `{company}-{environment}-{service}
+-{name}` template) and `naming.pattern.project` remain unimplemented on
+purpose:
+- `default` would need wiring into every other resource type's own
+  `name`/`dataset_id`/`repository_id`/`secret_id`/etc. field — a much
+  larger, separately-scoped change touching ~30 more modules, not
+  implied by fixing the two patterns that already had a concrete gap.
+- `project` has no Terraform-managed consumer at all — this platform has
+  never created a GCP project via Terraform (every real project so far,
+  including `sit`, was created by hand via `gcloud`).
+
+An instance that *does* set an explicit `name` is never affected by any
+of this — the fallback only applies when `name` is omitted.
+
 ## Adding a new environment
 
 Copy `config/environments/sit/deployment.yaml` to

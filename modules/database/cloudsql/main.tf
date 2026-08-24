@@ -4,7 +4,7 @@ resource "google_sql_database_instance" "cloudsql" {
 
   project = var.project_id
 
-  name = lookup(each.value, "name", each.key)
+  name = lookup(each.value, "name", lookup(var.generated_names, each.key, each.key))
 
   region = each.value.region
 

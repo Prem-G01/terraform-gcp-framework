@@ -1,7 +1,7 @@
 resource "google_compute_instance" "vm" {
   for_each     = var.config.vms
   project      = var.project_id
-  name         = lookup(each.value, "name", each.key)
+  name         = lookup(each.value, "name", lookup(var.generated_names, each.key, each.key))
   zone         = each.value.zone
   machine_type = each.value.machine_type
   tags         = each.value.tags

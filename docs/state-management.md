@@ -95,6 +95,17 @@ and `.github/workflows/*.yml` `ENVIRONMENTS_JSON` repository variable need
 for real" for what that surfaced (real bugs, real orphaned-resource
 imports) and the full second teardown.
 
+**`bootstrap/` is live again as of 2026-08-24**, this time with
+`enable_workload_identity_federation = true` — 66 resources, including a
+real WIF pool/provider and per-environment `tf-plan-<env>`/
+`tf-apply-<env>` pair, applied after the repo was pushed to a real GitHub
+remote. The output table below reflects real current values
+(`state_bucket = prj-dg-devops-test-tfstate-v4`,
+`artifact_bucket = prj-dg-devops-test-tf-artifacts`). See
+[docs/troubleshooting.md](troubleshooting.md) "Repo pushed to GitHub,
+bootstrap applied with WIF enabled" for the full account and the real
+`ENVIRONMENTS_JSON` value derived from these outputs.
+
 ## Why one state file per environment for now
 
 The spec this rebuild followed asked for layer-based state separation

@@ -118,13 +118,20 @@ to `terraform apply` directly instead of re-planning.
 
 ## What this rebuild did not do
 
-No workflow, WIF binding, GitHub Environment, or `bootstrap/grants/` apply
-here has actually run — this repository has no connected GitHub remote
-yet and this rebuild was explicitly code-only (see
-[docs/troubleshooting.md](troubleshooting.md)). The YAML is real and
-`terraform validate`/`fmt`/`plan` were run against every stack it
-orchestrates (both `bootstrap/` and `bootstrap/grants/` plan cleanly
-against placeholder project IDs), but the workflow steps themselves are
-untested against a live GitHub Actions run, and `sit`/`uat`/`prod` are
-still placeholder project IDs — nobody has applied `bootstrap/grants/`
-against a real spoke project yet.
+The repo now has a real GitHub remote
+(`https://github.com/Prem-G01/terraform-gcp-framework`, branch `main`),
+and `bootstrap/` was applied for real on 2026-08-24 with
+`enable_workload_identity_federation = true` — the WIF pool/provider and
+every `tf-plan-<env>`/`tf-apply-<env>` service account in step 3's
+`ENVIRONMENTS_JSON` above are real, live resources, not placeholders (see
+[docs/troubleshooting.md](troubleshooting.md) "Repo pushed to GitHub,
+bootstrap applied with WIF enabled"). What's still missing: step 3
+(`ENVIRONMENTS_JSON`) and step 4 (GitHub Environments + required
+reviewers) have not been configured on the GitHub side yet — this
+environment has no `gh` CLI or `GITHUB_TOKEN`, so both are manual web-UI
+steps the user still needs to do. No workflow has actually triggered a
+run as a result. `sit`/`uat`/`prod` are still the same central project —
+real spoke projects and a `bootstrap/grants/` apply against them have
+still never happened, so `ENVIRONMENTS_JSON`'s bucket names are identical
+across all four environment entries for now instead of pointing at
+per-environment state.

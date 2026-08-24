@@ -21,10 +21,17 @@ section, `prj-dg-devops-test` has nothing left except that orphan** —
 PSA resources are real but untracked, blocked on the same
 `FLOW_SN_DC_RESOURCE_PREVENTING_DELETE_CONNECTION` GCP-side condition as
 the original 2026-08-18 incident, and need manual `gcloud` cleanup once
-it clears. `sit`/`uat`/`prod` and CI/CD triggers have still never been
-applied. Read this before calling anything here "production ready," and
-read the dated section headers in order — an earlier section can be
-fully superseded by a later one.
+it clears. On 2026-08-24 the repo was pushed to a real GitHub remote and
+`bootstrap/` was applied again with WIF actually enabled (66 resources,
+real WIF pool/provider and per-environment SA outputs — see "Repo pushed
+to GitHub, bootstrap applied with WIF enabled" below); GitHub Environments
+and the `ENVIRONMENTS_JSON` repository variable still need manual setup
+via the GitHub web UI, and no workflow has actually run yet.
+`sit`/`uat`/`prod` are still the same central project — real spoke
+projects and `bootstrap/grants/` against them have still never happened.
+Read this before calling anything here "production ready," and read the
+dated section headers in order — an earlier section can be fully
+superseded by a later one.
 
 **Decided at the start:**
 1. The previous local `terraform.tfstate` (which referenced a different
@@ -606,6 +613,51 @@ state is either fully destroyed or safely relocated before touching
 anything the next stack's state depends on — `environments/dev`'s
 backend bucket should never have been in bootstrap's destroy plan while
 dev still had undestroyed resources tracked in it.
+
+## Repo pushed to GitHub, bootstrap applied with WIF enabled, 2026-08-24
+
+The repository was pushed to a real GitHub remote,
+`https://github.com/Prem-G01/terraform-gcp-framework`, branch `main`
+(`git branch -m master main`, `git remote add origin ...`, `git push -u
+origin main` — succeeded using cached Git Credential Manager credentials
+already matching this machine's GitHub identity, no explicit token
+needed). No `gh` CLI or `GITHUB_TOKEN` is available in this environment
+(confirmed via `which gh` and `env | grep -i GITHUB`, both empty), so
+GitHub-side configuration (Environments, repository Variables) cannot be
+done programmatically from here — see `docs/cicd.md` "One-time setup"
+for the manual steps.
+
+`bootstrap/` was then applied for real against `prj-dg-devops-test` with
+`enable_workload_identity_federation = true` and `github_repository =
+"Prem-G01/terraform-gcp-framework"` — 66 resources added, 0 errors. Real
+outputs:
+
+```
+workload_identity_provider = "projects/88240501906/locations/global/workloadIdentityPools/cicd-pool/providers/github"
+state_bucket                = "prj-dg-devops-test-tfstate-v4"
+artifact_bucket             = "prj-dg-devops-test-tf-artifacts"
+log_bucket                  = "prj-dg-devops-test-logs-v3"
+terraform_plan_sa_emails    = { dev, sit, uat, prod → tf-plan-<env>@prj-dg-devops-test.iam.gserviceaccount.com }
+terraform_apply_sa_emails   = { dev, sit, uat, prod → tf-apply-<env>@prj-dg-devops-test.iam.gserviceaccount.com }
+```
+
+This is the first time this rebuild's WIF pool/provider and per-environment
+plan/apply service accounts have existed for real, rather than only being
+planned. `sit`/`uat`/`prod` are still the same central `prj-dg-devops-test`
+project (real spoke projects were never provisioned), so
+`bootstrap/grants/` — which grants those SAs roles in each spoke project —
+has still never been applied for real; the `ENVIRONMENTS_JSON` value
+below reuses the central project's bucket names for every environment
+entry as a result. `org_policies` was skipped again this apply (the
+`orgpolicy.policyAdmin` grant was never confirmed done).
+
+`ENVIRONMENTS_JSON` composed from these real outputs (verified against
+`terraform output -json` directly, not hand-typed) and handed to the
+user to add manually via Settings → Secrets and variables → Actions →
+Variables, per `docs/cicd.md` step 3. GitHub Environments (`dev`, `sit`,
+`uat`, `prod`, with required reviewers on the ones that should be gated)
+still need the same manual setup via the GitHub web UI — no workflow run
+has been triggered yet.
 
 ## Common issues
 

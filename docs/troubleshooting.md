@@ -672,6 +672,24 @@ Variables, per `docs/cicd.md` step 3. GitHub Environments (`dev`, `sit`,
 still need the same manual setup via the GitHub web UI — no workflow run
 has been triggered yet.
 
+## sit/uat/prod validated (config + terraform validate only), 2026-08-24
+
+With real spoke-project creation deferred (a cost/org decision, not a
+code one), `sit`/`uat`/`prod` were checked as far as possible without a
+real project: `python -m engine.cli validate-all config` — all four
+environments (including `dev`) PASS with zero errors/warnings;
+`render` succeeded for `sit`/`uat`/`prod`, writing each
+`.generated/deployment.normalized.json`; `terraform init -backend=false`
++ `terraform validate` succeeded for all three (`prod`'s init needed a
+longer timeout than `sit`/`uat` — a fresh provider plugin download, not
+a bug). This proves the module graph itself has no syntax/reference bugs
+for any of the three, but **does not** prove real cross-project IAM
+(`bootstrap/grants/`'s role bindings have never applied against an
+actual spoke project) or that `terraform plan` succeeds against real
+GCP — `sit`/`uat`/`prod`'s project IDs are still the placeholders in
+`config/environments/<env>/deployment.yaml`, and no real plan/apply was
+attempted against them since those projects don't exist.
+
 ## Common issues
 
 **`terraform plan` fails with "Backend initialization required"**

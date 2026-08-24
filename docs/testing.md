@@ -3,7 +3,7 @@
 ## What's actually run (and passing, as of this rebuild)
 
 ```bash
-pytest tests/ -v                                    # 43 passed
+pytest tests/ -v                                    # 48 passed
 pytest functions/process-upload/test_main.py -v     # 3 passed, no GCP call
 terraform fmt -check -recursive .                    # clean
 python -m engine.cli validate-all config             # dev/sit/uat/prod all PASS
@@ -15,6 +15,10 @@ cd environments/dev && terraform plan      # (with a real backend configured) 99
 cd platform && terraform test                                # 5 passed, mock_provider, no GCP call
 cd modules/database/cloudsql && terraform test                # 2 passed, mock_provider, no GCP call
 cd modules/security/workload_identity && terraform test       # 2 passed, mock_provider, no GCP call
+cd modules/storage/buckets && terraform test                  # 2 passed, mock_provider, no GCP call
+cd modules/compute/vm && terraform test                       # 2 passed, mock_provider, no GCP call
+cd modules/security/kms && terraform test                     # 2 passed, mock_provider, no GCP call
+cd modules/security/secrets && terraform test                 # 2 passed, mock_provider, no GCP call
 
 # Live Cloud Billing check — the one command anywhere in this repo that
 # makes a real GCP API call. Not part of the suite above on purpose.
@@ -82,12 +86,14 @@ these run with no credentials, no network access, and touch nothing real:
 | `modules/security/workload_identity/tests/binding.tftest.hcl` | the binding grants exactly `roles/iam.workloadIdentityUser`, `member` is the `project.svc.id.goog[namespace/ksa]` form GKE Workload Identity expects, and `service_account_id` resolves to the real GCP SA from config — plus a zero-instances case creates zero bindings |
 | `modules/storage/buckets/tests/security_defaults.tftest.hcl` | `uniform_bucket_level_access`/`public_access_prevention`/`versioning.enabled` all default to their secure values when omitted, and an explicit override is never silently upgraded back — same `security_defaults` audit finding |
 | `modules/compute/vm/tests/security_defaults.tftest.hcl` | `network.public_ip` defaults to no `access_config` block (no external IP) and all three `shielded_vm.*` fields default to `true` when omitted, with an explicit `public_ip = true` never silently dropped — same audit finding |
+| `modules/security/kms/tests/config_defaults.tftest.hcl` | a keyring's real GCP name falls back to its config map key when `name` is omitted (and an explicit name is never overridden); `purpose` defaults to `ENCRYPT_DECRYPT` and `rotation_period` to `7776000s` (90 days) when omitted, with explicit overrides of both preserved — KMS had zero test coverage before this despite `crypto_key` carrying `lifecycle { prevent_destroy = true }` and GCP having no API to hard-delete a key regardless (2026-08-24) |
+| `modules/security/secrets/tests/deletion_protection.tftest.hcl` | `deletion_protection` defaults to `false` when omitted (a generated secret is trivially regeneratable) and an explicit `true` is never silently dropped — regression coverage for the default this rebuild added on 2026-08-19, previously untested (2026-08-24) |
 
 Run from the module directory itself: `cd platform && terraform test`, or
 `cd modules/database/cloudsql && terraform test` (each needs its own
 `terraform init` first, same as any root module — `platform/`,
-`cloudsql`, `workload_identity`, `buckets`, and `vm` are the ones set up
-to run standalone).
+`cloudsql`, `workload_identity`, `buckets`, `vm`, `kms`, and `secrets`
+are the ones set up to run standalone).
 
 **Why so little coverage, out of 33 resource types?** These exist to
 demonstrate the pattern and to lock in real bugs/regressions this rebuild
@@ -135,19 +141,28 @@ verification that actually means anything for that part.
 
 ## What's not tested
 
-- **Integration**: no test actually runs `terraform apply` against a real
-  or ephemeral GCP project. Doing that safely needs a disposable sandbox
-  project, its own budget alert, and teardown automation — none of which
-  exists here (see [docs/troubleshooting.md](troubleshooting.md)).
-- **GitHub Actions pipelines**: `.github/workflows/*.yml` is unexercised —
-  no run has actually triggered it (no connected GitHub remote in this
-  environment).
+- **No automated test runs `terraform apply`** — but this *has* been done
+  by hand, twice, against the real `prj-dg-devops-test` project (112-117
+  of `environments/dev`'s resources, plus `bootstrap/` including a real
+  WIF-enabled apply on 2026-08-24) — see
+  [docs/troubleshooting.md](troubleshooting.md). Nothing is currently
+  left live from `environments/dev`'s own applies (both cycles were fully
+  torn down); `bootstrap/` itself is still live. There is still no
+  disposable sandbox project or automated teardown wired into CI — every
+  real apply/destroy cycle so far has been run and verified by hand.
+- **GitHub Actions pipelines**: `.github/workflows/*.yml` has still never
+  actually triggered a run. The repo now has a real GitHub remote
+  (`github.com/Prem-G01/terraform-gcp-framework`) and `bootstrap/`'s real
+  WIF trust chain exists, but the two remaining GitHub-side steps
+  (`ENVIRONMENTS_JSON` repository variable, GitHub Environments with
+  required reviewers) are still manual and not yet done — see
+  [docs/cicd.md](cicd.md) "One-time setup".
 - **Most of `modules/`** still has no dedicated `.tftest.hcl` —
-  `cloudsql`, `workload_identity`, `buckets`, and `vm` do, plus
-  `platform/tests/count_gating.tftest.hcl`'s coverage of `buckets`,
-  `org_policies`, `iap`, and `binary_authorization`. The real `terraform
-  plan`/`apply` against the real dev config (see above) is the only
-  cross-module exercise the other ~25 types have had.
+  `cloudsql`, `workload_identity`, `buckets`, `vm`, `kms`, and `secrets`
+  do, plus `platform/tests/count_gating.tftest.hcl`'s coverage of
+  `buckets`, `org_policies`, `iap`, and `binary_authorization`. The real
+  `terraform plan`/`apply` against the real dev config (see above) is the
+  only cross-module exercise the other ~23 types have had.
 - **`org_policies`, `iap`, `workload_identity`, and
   `binary_authorization`** (added for the zero-trust workstream — see
   [docs/security.md](security.md)) have never been applied against a

@@ -1,10 +1,20 @@
 # =============================================================================
 # Label / tag engine
 # -----------------------------------------------------------------------------
-# `required` keys must be present (after merge) on every labelable resource —
-# engine/security_engine.py's naming/label pass fails the deployment if one is
-# missing. `{environment}` and `{owner}` are resolved from deployment metadata
-# and config/global/defaults.yaml respectively.
+# `required` keys are merged onto every resource instance's `labels` during
+# config_loader._apply_required_labels — unconditionally, as of 2026-08-25.
+# (This previously only merged into instances that already declared their
+# own `labels:` block, silently no-op'ing for everything else — the vast
+# majority of real instances, and a real crash risk for
+# modules/compute/vm, modules/compute/cloudrun, and
+# modules/storage/buckets, which all read each.value.labels with no
+# fallback. This comment also used to claim a security_engine.py
+# enforcement pass that never existed; there is still no separate
+# validation step — the guarantee comes entirely from this merge always
+# running.) `{environment}` and `{owner}` are resolved from deployment
+# metadata and config/global/defaults.yaml respectively. `optional_keys`
+# below is documentation only — nothing validates that a config's extra
+# label keys are limited to this list.
 # =============================================================================
 
 labels:

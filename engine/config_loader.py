@@ -164,7 +164,21 @@ def load_deployment(env_dir: Path, config_root: Path | None = None) -> Deploymen
 
 
 def _apply_required_labels(instance: Any, global_config: GlobalConfig, environment: str, owner: str) -> Any:
-    if not isinstance(instance, dict) or "labels" not in instance:
+    # Found 2026-08-25: this used to return early — do nothing — for any
+    # instance that didn't already declare its own `labels:` block, which
+    # meant "required" labels only ever actually applied to the handful
+    # of instances that happened to opt in (4 of ~50+ in the real dev
+    # config). config/global/labels.yaml's own header comment claims
+    # these are enforced ("must be present... fails the deployment if
+    # missing") via a security_engine.py check that doesn't exist
+    # anywhere in the codebase — neither half of that claim was true.
+    # Also closes a real crash risk: modules/compute/vm,
+    # modules/compute/cloudrun, and modules/storage/buckets all read
+    # each.value.labels directly with no lookup()/try() fallback — an
+    # instance that omitted `labels:` entirely (reasonably assuming the
+    # "required" defaults would cover it, per this file's own promise)
+    # would have crashed terraform plan outright.
+    if not isinstance(instance, dict):
         return instance
     required = global_config.labels.get("labels", {}).get("required", {})
     resolved = {

@@ -47,6 +47,32 @@ def test_real_dev_config_resolves_tokens_to_real_values():
     assert function_source_bucket == bucket["name"]
 
 
+def test_required_labels_apply_even_to_instances_with_no_labels_block():
+    """Real gap found 2026-08-25: _apply_required_labels used to return
+    early for any instance without its own `labels:` block — meaning
+    "required" labels only ever applied to the handful of instances that
+    happened to opt in (4 of ~50+ in the real dev config). vpc.dev-vpc
+    sets no labels block at all; it must still get the required four."""
+    d = config_loader.load_deployment(CONFIG_ROOT / "environments" / "dev", CONFIG_ROOT)
+    vpc = d.instances("vpc")["dev-vpc"]
+    assert vpc["labels"] == {
+        "managed_by": "terraform",
+        "environment": "dev",
+        "platform": "gcp-platform",
+        "owner": "devops",
+    }
+
+
+def test_required_labels_merge_alongside_an_instance_own_labels():
+    """vm.app-vm-01 sets its own labels (app/env) — required labels must
+    merge in without dropping them."""
+    d = config_loader.load_deployment(CONFIG_ROOT / "environments" / "dev", CONFIG_ROOT)
+    vm = d.instances("vm")["app-vm-01"]
+    assert vm["labels"]["app"] == "app"
+    assert vm["labels"]["managed_by"] == "terraform"
+    assert vm["labels"]["environment"] == "dev"
+
+
 def test_no_unresolved_tokens_remain_in_normalized_config():
     """A leftover literal "{something}" in the rendered config would mean a
     typo'd token name (e.g. {enviroment}) silently passed through instead

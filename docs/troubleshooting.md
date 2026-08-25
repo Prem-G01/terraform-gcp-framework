@@ -883,6 +883,40 @@ terraform apply \
   -var 'log_sink_writer_identities={"sit":"serviceAccount:service-758025978407@gcp-sa-logging.iam.gserviceaccount.com"}'
 ```
 
+## org_policies is a permanent, deliberate limitation — 2026-08-25
+
+Tried the folder-scope fix the entry above said was the likely next
+step: a real `google_folder_iam_member` binding
+(`roles/orgpolicy.policyAdmin` on `folders/474619799501`, the folder
+`prj-dg-devops-test`/`prj-dg-devops-test-sit` both live under) against
+real GCP. Identical rejection: `Error 400: Role
+roles/orgpolicy.policyAdmin is not supported for this resource`.
+`gcloud iam list-testable-permissions` confirms
+`orgpolicy.policies.create/update/delete` are testable at organization
+scope too, the same way they were confirmed testable at project and
+folder scope — strongly indicating this specific predefined role can
+only ever be bound at the **organization** level.
+
+Asked directly whether to grant `tf-apply-sit` org-wide
+`orgpolicy.policyAdmin` across the entire `docugenieai.com`
+organization (not just this platform's own projects) to make this
+work. **Declined.** An organization-wide privilege escalation for a
+CI/CD identity is a fundamentally different risk category than
+anything else this platform grants, and not a trade worth making to
+unblock one constraint type.
+
+**`org_policies` is therefore permanently unable to apply for real
+within this platform's current IAM design** — not a bug, not merely
+unimplemented, but a deliberate limitation this platform's own
+governance stance declined to work around. See
+[docs/service-accounts.md](service-accounts.md) "org_policies cannot
+work with this platform's current IAM model" for the full account. The
+brief `google_folder_iam_member` attempt (`bootstrap/main.tf` and
+`bootstrap/grants/main.tf`, gated behind `var.folder_id`) was written,
+proven non-functional against real GCP, and fully reverted the same
+day — including its test coverage — rather than left in place as dead
+code that would fail loudly the moment anyone tried to use it.
+
 ## Common issues
 
 **`terraform plan` fails with "Backend initialization required"**

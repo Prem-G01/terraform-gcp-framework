@@ -72,7 +72,7 @@ whoever is actually accountable for that project — the same separation of
 concerns as `roles/iam.serviceAccountAdmin` (who an identity is) versus
 `roles/resourcemanager.projectIamAdmin` (what it can do where).
 
-## Org Policy grants need folder/org scope
+## org_policies cannot work with this platform's current IAM model
 
 A real `bootstrap/grants/` apply against `prj-dg-devops-test-sit` on
 2026-08-24 found that `roles/orgpolicy.policyAdmin` cannot be bound at
@@ -80,32 +80,42 @@ project scope at all — GCP's IAM API rejects it outright (`Error 400:
 Role roles/orgpolicy.policyAdmin is not supported for this resource`),
 even though the underlying `orgpolicy.policies.create/update/delete`
 permissions ARE testable at project scope (confirmed via `gcloud iam
-list-testable-permissions`). Cloud IAM restricts which resource types a
-given predefined role can actually be bound to, independent of whether
-its permissions apply there — this is one of those roles.
-
-The permissions ARE testable at folder scope too, so the real fix is a
-`google_folder_iam_member` (or `google_organization_iam_member`)
-binding on whichever folder/org node the target project lives under —
-not anything `bootstrap/main.tf`'s or `bootstrap/grants/`'s current
-project-scoped `google_project_iam_member` resources can express. This
-is very likely the actual, previously-undiagnosed root cause behind
+list-testable-permissions`). This is very likely the actual,
+previously-undiagnosed root cause behind
 `config/environments/*/deployment.yaml`'s `org_policies` block having
-never applied successfully for any identity all session (see
-`docs/troubleshooting.md`) — not simply a missing grant at whatever
-scope was assumed, but a role that structurally cannot be granted at
-project scope regardless of who requests it.
+never applied successfully for any identity all session — not simply a
+missing grant at whatever scope was assumed, but a role that
+structurally cannot be granted at project scope regardless of who
+requests it.
 
-**Not yet implemented**: neither `bootstrap/main.tf` nor
-`bootstrap/grants/main.tf` grants any folder- or org-level role today —
-doing so is a materially bigger privilege escalation than anything else
-in this platform's IAM model (folder/org IAM admin, not merely project
-IAM admin), and needs a deliberate design decision — who holds that
-permission, and how it's scoped down — rather than being added
-reflexively to unblock one constraint type. `roles/orgpolicy.policyAdmin`
-was removed from `modules/iam/deploy_roles`'s `apply_sa_roles` (a
-project-scoped list) after this was found, with a regression test
-guarding against it silently reappearing there.
+**Tried folder scope next, on 2026-08-25 — same rejection.** A real
+`google_folder_iam_member` binding against `folders/474619799501`
+(the folder `prj-dg-devops-test`/`prj-dg-devops-test-sit` both live
+under) failed with the identical `Error 400: ... is not supported for
+this resource`. `orgpolicy.policies.create/update/delete` ARE testable
+at organization scope too (confirmed the same way), which strongly
+suggests `roles/orgpolicy.policyAdmin` can only ever be bound at the
+**organization** level — meaning the only way to make `org_policies`
+actually work is granting `tf-apply-<env>` org-wide policy-admin
+capability across the *entire* organization, not just this platform's
+own projects.
+
+**Explicitly declined.** Asked directly whether to proceed with an
+org-wide grant; the answer was no — an organization-wide privilege
+escalation for a CI/CD identity is a fundamentally different risk
+profile than anything else in this platform, and not one to take on
+just to unblock one constraint type. **`org_policies` is therefore a
+permanent, deliberate limitation of this platform as currently
+designed**, not a bug and not merely unimplemented — it cannot be made
+to work without a decision this platform's own governance model
+declined to make. `roles/orgpolicy.policyAdmin` was removed from
+`modules/iam/deploy_roles`'s `apply_sa_roles` (a project-scoped list)
+after the project-scope rejection was found; the brief folder-scope
+attempt (`google_folder_iam_member` in `bootstrap/main.tf` and
+`bootstrap/grants/main.tf`, gated behind a `var.folder_id`) was written,
+proven non-functional against real GCP, and fully reverted the same
+day rather than left in place as dead, misleadingly-plausible-looking
+code.
 
 ## No long-lived keys
 

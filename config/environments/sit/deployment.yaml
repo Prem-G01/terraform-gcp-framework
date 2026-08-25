@@ -674,6 +674,12 @@ resources:
 
   # Project-level org policy constraints — safe to leave on in every
   # environment, see config/environments/dev/deployment.yaml's comment.
+  # Cannot actually apply for real under any identity this platform is
+  # willing to create — see docs/troubleshooting.md "org_policies is a
+  # permanent, deliberate limitation" — but the config itself remains
+  # correct and shippable, and was temporarily disabled only for the
+  # 2026-08-25 sit teardown cycle to avoid a guaranteed, already-diagnosed
+  # failure blocking the rest of that apply.
   org_policies:
     enabled: true
     disable_service_account_key_creation: true

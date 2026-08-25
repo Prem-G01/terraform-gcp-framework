@@ -917,6 +917,70 @@ proven non-functional against real GCP, and fully reverted the same
 day — including its test coverage — rather than left in place as dead
 code that would fail loudly the moment anyone tried to use it.
 
+## sit — full real apply (all resource types) and teardown, 2026-08-25
+
+Explicit ask: prove every resource type against real GCP, not just
+`apis`/`vpc`, then tear everything down immediately, with a complete
+log of what was deployed and what was destroyed. Full account, real
+numbers, and both raw logs preserved at the repo root:
+`sit-full-apply-teardown-report-2026-08-25.md` (the complete report),
+`sit-apply-full.log`, `sit-destroy-full.log`.
+
+**Apply**: 112 real resources across 30 of 31 enabled resource types
+(`org_policies` deliberately disabled for this cycle only — it cannot
+apply for real regardless, see the entry above). Found and fixed two
+real, previously-unknown bugs along the way, both specific to a
+brand-new GCP project's first-ever use of these services: the Workflows
+service agent needed explicit provisioning
+(`gcloud beta services identity create`) before `google_workflows
+_workflow` could be created, and the Compute Engine default service
+account needed `roles/cloudbuild.builds.builder` before Cloud Functions
+gen2's build step could succeed (a real 2024+ GCP default-project IAM
+change, not a permission this platform's own IAM model was missing —
+neither `deploy_roles` nor anything else grants roles to GCP's own
+default service accounts, by design).
+
+**Destroy**: 81 of 112 resources confirmed destroyed. 27 remaining are
+harmless API-enablement flags (zero cost). The other 4
+(`sit-vpc`/its default route/the PSA address/the PSA peering
+connection) are genuinely stuck on the identical
+`FLOW_SN_DC_RESOURCE_PREVENTING_DELETE_CONNECTION`-class GCP-side
+condition that blocked `dev`'s teardown earlier this session — verified
+again that no real producer (Cloud SQL, Memorystore) is attached, same
+conclusion as before: this needs to clear on GCP's side, not a code or
+config problem. Retry later with:
+
+```bash
+gcloud services vpc-peerings delete --network=sit-vpc --project=prj-dg-devops-test-sit
+gcloud compute networks delete sit-vpc --project=prj-dg-devops-test-sit
+```
+
+Hit and fixed the same `deletion_protection`/`force_destroy` two-step
+dance already established for `dev` (this time also needing
+`--force-security` for `cloudsql`/`cloudrun`'s ERROR-severity findings,
+since both are now genuinely enforced — see the security_engine entry
+above), plus the same stuck-`DELETE_REQUESTED` logging-bucket fix
+(`gcloud logging buckets undelete` + `terraform untaint`) already
+documented for `dev`. All temporary config/module overrides were
+reverted immediately after — confirmed via `git diff` showing only
+comment/documentation changes remain.
+
+**A real procedural mistake, disclosed honestly**: fixing the
+`deletion_protection` flags required a `terraform apply`, but it was
+run untargeted against a config that still had every resource type
+enabled — after some resources had already been destroyed in an
+earlier partial pass, this **recreated** them (router, notification
+channels, uptime checks, Document AI processors, Cloud Functions,
+artifact registries, Binary Authorization policy, both logging
+buckets), which is exactly what put the two logging buckets into the
+stuck `DELETE_REQUESTED` race that needed the manual fix. No lasting
+harm — everything recreated this way was destroyed again in the final
+pass — but it cost real GCP API calls and roughly 10 extra minutes that
+a correctly `-target`-scoped apply would have avoided. The lesson:
+when fixing protection flags mid-teardown, target the apply to only
+the resources still present in state, never run it untargeted against
+a still-fully-enabled config.
+
 ## Common issues
 
 **`terraform plan` fails with "Backend initialization required"**

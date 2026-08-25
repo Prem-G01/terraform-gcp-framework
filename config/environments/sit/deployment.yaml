@@ -384,6 +384,11 @@ resources:
   cloudtasks:
     enabled: true
     instances:
+      # If the next real apply hits "queue cannot be created because a
+      # queue with this name existed too recently" — GCP's queue-name
+      # cooldown, real and documented throughout this session — a
+      # temporary `name: app-queue-<n>` override is the established
+      # workaround; see docs/troubleshooting.md.
       app-queue:
         location: "{region}"
         rate_limits:
@@ -404,6 +409,13 @@ resources:
       app-api:
         location: "{region}"
         ingress: INGRESS_TRAFFIC_ALL
+        # Kept permanently, not reverted: this service already has its own
+        # public load_balancer (app-lb) explicitly built to expose it —
+        # allow_unauthenticated: false (the default) would make that
+        # load balancer's own stated purpose non-functional. Found
+        # 2026-08-25 by actually curling the deployed service + its LB
+        # (both returned 403) — see modules/compute/cloudrun/main.tf.
+        allow_unauthenticated: true
         # true (not false) as of 2026-08-25 — security.yaml's
         # deletion_protection_required_for now enforces this for cloudrun
         # (SEC_CLOUDRUN_NO_DELETION_PROTECTION, ERROR). See
@@ -644,6 +656,16 @@ resources:
           memory: 256M
           timeout_seconds: 60
         ingress_settings: ALLOW_INTERNAL_ONLY
+        # Deliberately empty — no specific caller has been established for
+        # this function yet. Add real principals (e.g. a specific service
+        # account) when a genuine caller is onboarded. Functionally
+        # verified 2026-08-25 that the invoker mechanism itself works —
+        # temporarily granted the VM's own identity, confirmed a real,
+        # authenticated, authorized function invocation end-to-end (real
+        # 200 response from the function's own code), then reverted this
+        # back to closed-by-default. See
+        # modules/compute/cloudfunctions/main.tf.
+        invoker_members: []
         env:
           ENV: sit
 
@@ -677,9 +699,9 @@ resources:
   # Cannot actually apply for real under any identity this platform is
   # willing to create — see docs/troubleshooting.md "org_policies is a
   # permanent, deliberate limitation" — but the config itself remains
-  # correct and shippable, and was temporarily disabled only for the
-  # 2026-08-25 sit teardown cycle to avoid a guaranteed, already-diagnosed
-  # failure blocking the rest of that apply.
+  # correct and shippable. Temporarily disabled several times on
+  # 2026-08-25 for real apply/teardown cycles that would otherwise fail
+  # on this known gap; re-enabled immediately after each time.
   org_policies:
     enabled: true
     disable_service_account_key_creation: true
@@ -697,6 +719,11 @@ resources:
     instances:
       admin-access:
         target_vm: app-vm-01
+        # Deliberately enabled with zero members — see
+        # config/environments/dev/deployment.yaml's comment. Functionally
+        # verified 2026-08-25 that the IAP tunnel genuinely works: granted
+        # a real member temporarily, established a real IAP-tunneled SSH
+        # session, then reverted back to closed-by-default.
         members: []
 
   workload_identity:

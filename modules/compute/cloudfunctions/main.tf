@@ -47,3 +47,44 @@ resource "google_cloudfunctions2_function" "function" {
     environment_variables = lookup(each.value, "env", {})
   }
 }
+
+# `ingress_settings` above only controls which *network paths* can reach
+# this function — it grants no IAM authorization. This module had no
+# invoker mechanism at all before this: even ALLOW_INTERNAL_ONLY still
+# returns 403 to every caller, including a legitimate one inside the same
+# VPC, until explicitly granted invoker access. Found 2026-08-25 by
+# actually curling a real deployed function from inside its own VPC (via
+# a real IAP-tunneled SSH session using the calling VM's own identity
+# token) rather than just checking `terraform apply` succeeded.
+# Deliberately a members list, not an `allow_unauthenticated` toggle like
+# modules/compute/cloudrun — ALLOW_INTERNAL_ONLY functions should grant
+# specific callers, never `allUsers`, or the network-level restriction
+# becomes meaningless.
+#
+# Binds against the underlying Cloud Run service (google_cloud_run_v2
+# _service_iam_member), NOT google_cloudfunctions2_function_iam_member —
+# confirmed against real GCP 2026-08-25 that these are two separate ACLs:
+# granting roles/cloudfunctions.invoker via the Cloud-Functions-specific
+# IAM resource leaves the underlying Cloud Run service's own IAM policy
+# completely empty (`gcloud run services get-iam-policy` showed zero
+# bindings), and HTTP invocation is actually gated by the Cloud Run
+# policy, not the Cloud Functions one. A gen2 function's underlying Cloud
+# Run service shares its exact name.
+locals {
+  cloudfunctions_invoker_bindings = merge([
+    for name, cfg in var.config.cloudfunctions : {
+      for member in lookup(cfg, "invoker_members", []) :
+      "${name}-${member}" => { function_name = name, member = member }
+    }
+  ]...)
+}
+
+resource "google_cloud_run_v2_service_iam_member" "invoker" {
+  for_each = local.cloudfunctions_invoker_bindings
+
+  project  = var.project_id
+  location = google_cloudfunctions2_function.function[each.value.function_name].location
+  name     = google_cloudfunctions2_function.function[each.value.function_name].name
+  role     = "roles/run.invoker"
+  member   = each.value.member
+}

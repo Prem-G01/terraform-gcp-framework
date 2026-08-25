@@ -56,6 +56,7 @@ approved region too.
 | `test_cloudsql_password_secret_typo_is_rejected` / `..._valid_reference_passes` | `cloudsql.users.<user>.password_secret` — a real `var.passwords[secret_name]` lookup, never checked before — now fails `INVALID_REFERENCE` on a typo and passes cleanly when correct (2026-08-25, see docs/dependencies.md "Nested instance references") |
 | `test_pubsub_dead_letter_topic_typo_is_rejected` | same gap, `pubsub.subscriptions.<sub>.dead_letter_policy.topic` — a real `google_pubsub_topic.topic[...]` self-reference, never checked before |
 | `test_public_ssh_firewall_is_rejected` | a firewall rule opening TCP/22 to 0.0.0.0/0 fails `SEC_PUBLIC_SSH` |
+| `test_cloudrun_no_deletion_protection_is_rejected` / `..._with_deletion_protection_passes` | real gap found 2026-08-25: `security.yaml`'s `deletion_protection_required_for` listed `cloudrun` but no check existed — the real dev/sit/uat/prod configs all relied on that gap before it was fixed (see docs/security.md) |
 | `test_dependency_cycle_is_detected` | a synthetic `a requires b, b requires a` graph is caught |
 | `test_real_dependency_graph_has_no_cycles` | the real `config/global/dependencies.yaml` is acyclic |
 | `test_yaml_syntax_error_is_reported` | malformed YAML raises `ConfigError` rather than crashing |

@@ -14,6 +14,17 @@ from engine.errors import Finding
 
 OPEN_CIDR = "0.0.0.0/0"
 
+# config/global/security.yaml's policy.deletion_protection_required_for
+# lists which resource types must have deletion_protection = true — this
+# maps each to its rule id (naming isn't a strict f"SEC_{rtype.upper()}_..."
+# derivation since cloudsql's existing rule predates this generic loop and
+# uses SEC_SQL_, not SEC_CLOUDSQL_). Found 2026-08-25: cloudrun was listed
+# in the policy but had no matching check at all — a real, silent gap.
+DELETION_PROTECTION_RULE_IDS = {
+    "cloudsql": "SEC_SQL_NO_DELETION_PROTECTION",
+    "cloudrun": "SEC_CLOUDRUN_NO_DELETION_PROTECTION",
+}
+
 
 def _severity(security_policy: dict, rule_id: str) -> str:
     for rule in security_policy.get("rules", []):
@@ -84,8 +95,16 @@ def validate_security(deployment) -> list[Finding]:
             if (sql.get("network") or {}).get("ipv4_enabled"):
                 findings.append(_finding(policy, "SEC_PUBLIC_SQL", f"cloudsql.{name}",
                                           "network.ipv4_enabled is true; Cloud SQL must stay on a private IP."))
-            if not sql.get("deletion_protection", True):
-                findings.append(_finding(policy, "SEC_SQL_NO_DELETION_PROTECTION", f"cloudsql.{name}",
+
+    for rtype in policy.get("policy", {}).get("deletion_protection_required_for", []):
+        if rtype not in enabled:
+            continue
+        rule_id = DELETION_PROTECTION_RULE_IDS.get(rtype)
+        if rule_id is None:
+            continue  # listed in policy with no matching rule id yet — skip rather than crash
+        for name, instance in deployment.instances(rtype).items():
+            if not instance.get("deletion_protection", True):
+                findings.append(_finding(policy, rule_id, f"{rtype}.{name}",
                                           "deletion_protection is false."))
 
     if "kms" in enabled:

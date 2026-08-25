@@ -49,10 +49,28 @@ default genuinely differs by category, not a uniform `true`:
   real risk for that resource type. Opt in per-instance where it
   genuinely applies (e.g. a VM that shouldn't be casually replaced).
 
-Only `cloudsql`'s is enforced at ERROR severity
-(`SEC_SQL_NO_DELETION_PROTECTION` below) — the others are a safe
-default, not a validated policy, so an explicit `false` in
-`deployment.yaml` is allowed and not flagged for the rest.
+`cloudsql` and `cloudrun` are both enforced at ERROR severity
+(`SEC_SQL_NO_DELETION_PROTECTION` / `SEC_CLOUDRUN_NO_DELETION_PROTECTION`
+below, driven generically by `config/global/security.yaml`'s
+`policy.deletion_protection_required_for` — see
+[docs/dependencies.md](dependencies.md)-adjacent reasoning) — `gke`,
+`bigquery`, and `workflows` remain a safe default, not a validated
+policy, so an explicit `false` is allowed and not flagged for those
+three specifically.
+
+**This section was wrong about `cloudrun` until 2026-08-25**: it
+previously said only `cloudsql` was enforced, on the theory that the
+others were deliberately left as an unvalidated safe default. That
+theory didn't match `security.yaml`'s own `policy
+.deletion_protection_required_for` list, which had listed `cloudrun`
+alongside `cloudsql` all along — `engine/security_engine.py` just never
+actually read that list generically, hardcoding a `cloudsql`-only check
+instead. The real `dev`/`sit`/`uat`/`prod` configs had all been relying
+on that gap (`cloudrun.app-api.deletion_protection: false`, no comment
+explaining why). Fixed: the check is now a generic loop over the policy
+list (`DELETION_PROTECTION_RULE_IDS` in `security_engine.py`), and all
+four environments' configs now set `true` instead, matching every other
+enforced type.
 
 **A real gap between this doc and the code, found 2026-08-24**: this
 section already described `cloudsql`'s `deletion_protection` as going

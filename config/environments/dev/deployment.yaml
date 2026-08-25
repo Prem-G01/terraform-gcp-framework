@@ -404,7 +404,14 @@ resources:
       app-api:
         location: "{region}"
         ingress: INGRESS_TRAFFIC_ALL
-        deletion_protection: false
+        # true (not false) as of 2026-08-25 — config/global/security.yaml's
+        # deletion_protection_required_for now actually enforces this for
+        # cloudrun (SEC_CLOUDRUN_NO_DELETION_PROTECTION, ERROR), closing a
+        # real gap where cloudrun was listed in that policy but nothing
+        # checked it. This demo "hello" service costs nothing to keep
+        # protected; unprotect explicitly (same two-step dance as
+        # cloudsql/kms) if you actually need to tear it down.
+        deletion_protection: true
         image:
           # Was asia-south1-docker.pkg.dev, which 403'd on 2026-08-18 — the
           # google/cloudrun "hello" sample is only published at the

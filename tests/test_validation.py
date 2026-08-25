@@ -130,6 +130,50 @@ def test_pubsub_dead_letter_topic_typo_is_rejected():
     ), [f.render() for f in findings]
 
 
+def test_cloudrun_no_deletion_protection_is_rejected():
+    """Real gap found 2026-08-25: config/global/security.yaml's
+    policy.deletion_protection_required_for listed cloudrun, but no check
+    for it existed anywhere — the real dev config relied on that gap
+    (deletion_protection: false) before this was fixed alongside adding
+    the SEC_CLOUDRUN_NO_DELETION_PROTECTION rule."""
+
+    class FakeDeployment:
+        class global_config:
+            security = {
+                "policy": {"deletion_protection_required_for": ["cloudsql", "cloudrun"]},
+                "rules": [],
+            }
+
+        def enabled_resource_types(self):
+            return ["cloudrun"]
+
+        def instances(self, rtype):
+            return {"app-api": {"deletion_protection": False}} if rtype == "cloudrun" else {}
+
+    findings = security_engine.validate_security(FakeDeployment())
+    assert any(
+        f.rule == "SEC_CLOUDRUN_NO_DELETION_PROTECTION" and f.resource == "cloudrun.app-api" for f in findings
+    ), [f.render() for f in findings]
+
+
+def test_cloudrun_with_deletion_protection_passes():
+    class FakeDeployment:
+        class global_config:
+            security = {
+                "policy": {"deletion_protection_required_for": ["cloudsql", "cloudrun"]},
+                "rules": [],
+            }
+
+        def enabled_resource_types(self):
+            return ["cloudrun"]
+
+        def instances(self, rtype):
+            return {"app-api": {"deletion_protection": True}} if rtype == "cloudrun" else {}
+
+    findings = security_engine.validate_security(FakeDeployment())
+    assert findings == [], [f.render() for f in findings]
+
+
 def test_public_ssh_firewall_is_rejected():
     d = load("invalid_public_ssh")
     findings = security_engine.validate_security(d)

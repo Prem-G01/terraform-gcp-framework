@@ -404,7 +404,11 @@ resources:
       app-api:
         location: "{region}"
         ingress: INGRESS_TRAFFIC_ALL
-        deletion_protection: false
+        # true (not false) as of 2026-08-25 — security.yaml's
+        # deletion_protection_required_for now enforces this for cloudrun
+        # (SEC_CLOUDRUN_NO_DELETION_PROTECTION, ERROR). See
+        # config/environments/dev/deployment.yaml's identical comment.
+        deletion_protection: true
         image:
           # google/cloudrun "hello" sample is only published at the
           # multi-region us-docker.pkg.dev host, not per-region mirrors.

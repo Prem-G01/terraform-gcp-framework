@@ -8,11 +8,25 @@
 # =============================================================================
 
 policy:
+  # engine/security_engine.py's generic loop enforces this at ERROR
+  # severity for every type listed here — the matching rule id is
+  # SEC_<TYPE>_NO_DELETION_PROTECTION (SEC_SQL_NO_DELETION_PROTECTION for
+  # cloudsql, SEC_CLOUDRUN_NO_DELETION_PROTECTION for cloudrun), each
+  # declared in `rules:` below. Found 2026-08-25: cloudrun was listed here
+  # but had no matching rule/check at all — a real, silent gap (the real
+  # dev config relied on it, deletion_protection: false, before this was
+  # fixed).
   deletion_protection_required_for:
     - cloudsql
     - cloudrun
 
-  kms_required_for: []   # e.g. add "buckets" once CMEK is mandated org-wide
+  # NOT YET ENFORCED — unlike deletion_protection_required_for above,
+  # nothing in engine/security_engine.py reads this. Currently empty, so
+  # that's not a live gap, but populating it (e.g. adding "buckets" once
+  # CMEK is mandated org-wide) would need real enforcement logic written
+  # first — what field means "has CMEK" differs per resource type and
+  # isn't defined anywhere yet.
+  kms_required_for: []
 
 rules:
   - id: SEC_PUBLIC_SSH
@@ -64,6 +78,11 @@ rules:
     applies_to: [cloudsql]
     severity: ERROR
     description: "Cloud SQL instance has deletion_protection = false"
+
+  - id: SEC_CLOUDRUN_NO_DELETION_PROTECTION
+    applies_to: [cloudrun]
+    severity: ERROR
+    description: "Cloud Run service has deletion_protection = false"
 
   - id: SEC_KMS_ROTATION_MISSING
     applies_to: [kms]

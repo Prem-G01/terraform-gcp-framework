@@ -142,6 +142,12 @@ def validate_security(deployment) -> list[Finding]:
                 findings.append(_finding(policy, "SEC_CLOUDFUNCTION_PUBLIC_INGRESS", f"cloudfunctions.{name}",
                                           "ingress_settings is ALLOW_ALL — this function is publicly reachable."))
 
+    if "cloudrun" in enabled:
+        for name, svc in deployment.instances("cloudrun").items():
+            if svc.get("allow_unauthenticated"):
+                findings.append(_finding(policy, "SEC_CLOUDRUN_PUBLIC_INVOKER", f"cloudrun.{name}",
+                                          "allow_unauthenticated is true — this service is publicly invocable."))
+
     return findings
 
 

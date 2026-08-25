@@ -116,6 +116,8 @@ DSL; see that file's docstring for why). Current rules:
 | SEC_REDIS_AUTH_DISABLED | memorystore | ERROR | `auth_enabled: false` |
 | SEC_REDIS_UNENCRYPTED_TRANSIT | memorystore | ERROR | `transit_encryption_mode: DISABLED` |
 | SEC_CLOUDFUNCTION_PUBLIC_INGRESS | cloudfunctions | WARNING | `ingress_settings: ALLOW_ALL` (legitimate for webhooks — flagged for confirmation, not blocked) |
+| SEC_CLOUDRUN_NO_DELETION_PROTECTION | cloudrun | ERROR | `deletion_protection: false` |
+| SEC_CLOUDRUN_PUBLIC_INVOKER | cloudrun | WARNING | `allow_unauthenticated: true` (legitimate for a service fronted by its own `load_balancer` — flagged for confirmation, not blocked; added 2026-08-25 alongside the invoker IAM fix below) |
 
 ## VPC Service Controls — read before enabling
 
@@ -252,6 +254,52 @@ separately, list their names in
 `evaluation_mode` to `REQUIRE_ATTESTATION`. Consider
 `enforcement_mode: DRYRUN_AUDIT_LOG_ONLY` first, to see what the policy
 would have blocked before it can actually break a real deploy.
+
+**Verified for real, not just planned, on 2026-08-25.** Every claim above
+was previously theoretical — `ALWAYS_DENY` had never actually been tested
+against a real cluster. During a functional-verification pass on `sit`,
+deploying a real unattested test pod (`kubectl run wi-test --image=
+google/cloud-sdk:slim ...`) was genuinely denied by the admission webhook
+(`imagepolicywebhook.image-policy.k8s.io ... Denied by always_deny
+admission rule`) — the first positive proof this control works, not just
+that it's configured. See docs/testing.md and
+`sit-functional-verification-report-2026-08-25.md`.
+
+## Cloud Run / Cloud Functions invoker IAM
+
+`modules/compute/cloudrun` and `modules/compute/cloudfunctions` both had
+a real gap, found the same day by the same functional-verification pass:
+neither module had **any** mechanism to grant `roles/run.invoker`.
+`ingress`/`ingress_settings` only control which network paths can reach
+the service — they grant no IAM authorization. The practical effect was
+the opposite of a vulnerability: everything was unreachable by default,
+including this platform's own `app-api` service behind its own public
+`load_balancer` (built specifically to expose it), and a Cloud Function
+being called by a legitimate caller inside the same VPC.
+
+Fixed by adding:
+
+- `cloudrun`: `allow_unauthenticated` (bool, default `false`). When
+  `true`, grants `roles/run.invoker` to `allUsers` via a conditional
+  `google_cloud_run_v2_service_iam_member`. Deny-by-default; set `true`
+  explicitly only for a service genuinely meant to be public (this
+  platform's own `app-api`, matched to its `app-lb` load balancer).
+- `cloudfunctions`: `invoker_members` (list of principals, default `[]`
+  — deliberately not an `allUsers` toggle, since an `ALLOW_INTERNAL_ONLY`
+  function should only ever grant specific callers). Binds
+  `roles/run.invoker` against the function's **underlying Cloud Run
+  service** (`google_cloud_run_v2_service_iam_member`), not
+  `google_cloudfunctions2_function_iam_member` — confirmed against real
+  GCP that granting `roles/cloudfunctions.invoker` via the
+  Cloud-Functions-specific resource never reaches the Cloud Run service's
+  own IAM policy (`gcloud run services get-iam-policy` showed zero
+  bindings even after a successful apply), and HTTP invocation is
+  actually gated by that Cloud Run policy, not the Cloud Functions one —
+  two genuinely separate ACLs for what looks like one resource.
+
+Both fixes verified end-to-end against real GCP: real 200 responses,
+including the function's actual business-logic JSON payload, not just a
+clean `terraform apply`.
 
 ## What this replaced
 

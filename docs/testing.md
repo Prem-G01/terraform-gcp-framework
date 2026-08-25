@@ -98,13 +98,16 @@ these run with no credentials, no network access, and touch nothing real:
 | `modules/iam/deploy_roles/tests/role_coverage.tftest.hcl` | every role `apply_sa_roles` needs, spot-checked against 10 real gaps an IAM audit found the same day (GKE, Cloud Tasks queue management, Memorystore, PSA, VPC-SC, Binary Authorization, Cloud Functions gen2, Document AI, IAP, Org Policies), plus a guard that `roles/editor`/`roles/owner` never creep in — a zero-resource module (locals/outputs only), no `mock_provider` needed |
 | `bootstrap/grants/tests/grants.tftest.hcl` | the stack that actually wires cross-project IAM for sit/uat/prod — SA emails resolve against `central_project_id` not `spoke_project_id`, every binding targets the spoke project, binding counts match `deploy_roles` exactly, and the log sink is correctly gated and targets the real bucket; had zero coverage before, all 4 passed on the first run (2026-08-24) |
 | `modules/shared/naming/tests/generated_names.tftest.hcl` | real name generation for `vm`/`sql` (added 2026-08-24 — see docs/configuration.md "Generated names"): interpolates `naming.yaml`'s pattern templates correctly, always lowercases the result regardless of `organization.company`'s own casing (a real GCP plan failed outright on an uppercase-cased name before this), empty `instance_keys` produces an empty map, and `separator`/`company` pass-through outputs are unchanged; zero coverage before this |
+| `modules/compute/cloudfunctions/tests/scaling_and_resources_defaults.tftest.hcl` | `scaling`/`resources` were each hard-required each.value references with no fallback for the whole object — same gap class as cloudsql/artifact_registry/scheduler/cloudtasks; `max_instance_count` defaults to 3 and `available_memory` to `256M` when the whole block is omitted, with explicit overrides preserved (2026-08-24) |
+| `modules/compute/cloudfunctions/tests/invoker_iam.tftest.hcl` | real bug found 2026-08-25 via actual functional testing against real GCP (see docs/troubleshooting.md): this module had no invoker mechanism at all — `ALLOW_INTERNAL_ONLY` still 403'd a legitimate in-VPC caller. Locks in that `invoker_members` grants `roles/run.invoker` on the underlying `google_cloud_run_v2_service` (not `google_cloudfunctions2_function_iam_member` + `roles/cloudfunctions.invoker`, confirmed against real GCP to never reach the ACL that actually gates HTTP invocation), targeting the function's Cloud Run service by its shared name; omitting `invoker_members` grants zero bindings |
+| `modules/compute/cloudrun/tests/invoker_iam.tftest.hcl` | same class of real bug found 2026-08-25, same day: `ingress` only controls network reachability, not IAM — a deployed service (and its own public `load_balancer`) 403'd every caller with no explicit invoker binding. Locks in that `allow_unauthenticated = true` grants `roles/run.invoker` to `allUsers`, and omitting it grants zero bindings — this module had zero test coverage of any kind before this |
 
 Run from the module directory itself: `cd platform && terraform test`, or
 `cd modules/database/cloudsql && terraform test` (each needs its own
 `terraform init` first, same as any root module — `platform/`,
 `cloudsql`, `workload_identity`, `buckets`, `vm`, `kms`, `secrets`,
-`deploy_roles`, `bootstrap/grants`, and `shared/naming` are the ones set
-up to run standalone).
+`deploy_roles`, `bootstrap/grants`, `shared/naming`, `cloudfunctions`,
+and `cloudrun` are the ones set up to run standalone).
 
 **Why so little coverage, out of 33 resource types?** These exist to
 demonstrate the pattern and to lock in real bugs/regressions this rebuild
@@ -153,14 +156,24 @@ verification that actually means anything for that part.
 ## What's not tested
 
 - **No automated test runs `terraform apply`** — but this *has* been done
-  by hand, twice, against the real `prj-dg-devops-test` project (112-117
-  of `environments/dev`'s resources, plus `bootstrap/` including a real
-  WIF-enabled apply on 2026-08-24) — see
-  [docs/troubleshooting.md](troubleshooting.md). Nothing is currently
-  left live from `environments/dev`'s own applies (both cycles were fully
-  torn down); `bootstrap/` itself is still live. There is still no
-  disposable sandbox project or automated teardown wired into CI — every
-  real apply/destroy cycle so far has been run and verified by hand.
+  by hand, several times, against the real `prj-dg-devops-test` project:
+  the original `environments/dev` cycles, `bootstrap/` including a real
+  WIF-enabled apply on 2026-08-24, and two full `environments/sit` cycles
+  on 2026-08-25 — the second one specifically to *functionally* exercise
+  deployed resources (curl endpoints, query databases, invoke functions,
+  open tunnels) rather than only check `apply` succeeded, which is what
+  found the Cloud Run / Cloud Functions invoker bugs above and produced
+  the first real, positive proof that `binary_authorization`'s
+  `ALWAYS_DENY` default actually blocks an unattested image deploy on a
+  live GKE cluster — see
+  [docs/troubleshooting.md](troubleshooting.md) and
+  `sit-functional-verification-report-2026-08-25.md`. Nothing is
+  currently left live from any of these cycles (all fully torn down to
+  the same known floor of 27 harmless API-enablement flags + 4 resources
+  stuck on a documented, unresolved GCP-side PSA condition); `bootstrap/`
+  itself is still live. There is still no disposable sandbox project or
+  automated teardown wired into CI — every real apply/destroy cycle so
+  far has been run and verified by hand.
 - **GitHub Actions pipelines**: `.github/workflows/*.yml` has still never
   actually triggered a run. The repo now has a real GitHub remote
   (`github.com/Prem-G01/terraform-gcp-framework`) and `bootstrap/`'s real
@@ -169,14 +182,25 @@ verification that actually means anything for that part.
   required reviewers) are still manual and not yet done — see
   [docs/cicd.md](cicd.md) "One-time setup".
 - **Most of `modules/`** still has no dedicated `.tftest.hcl` —
-  `cloudsql`, `workload_identity`, `buckets`, `vm`, `kms`, and `secrets`
-  do, plus `platform/tests/count_gating.tftest.hcl`'s coverage of
-  `buckets`, `org_policies`, `iap`, and `binary_authorization`. The real
-  `terraform plan`/`apply` against the real dev config (see above) is the
-  only cross-module exercise the other ~23 types have had.
+  `cloudsql`, `workload_identity`, `buckets`, `vm`, `kms`, `secrets`,
+  `cloudfunctions`, and `cloudrun` do, plus
+  `platform/tests/count_gating.tftest.hcl`'s coverage of `buckets`,
+  `org_policies`, `iap`, and `binary_authorization`. The real
+  `terraform plan`/`apply` against the real dev/sit configs (see above)
+  is the only cross-module exercise the other ~21 types have had.
 - **`org_policies`, `iap`, `workload_identity`, and
   `binary_authorization`** (added for the zero-trust workstream — see
-  [docs/security.md](security.md)) have never been applied against a
-  real project. `binary_authorization`'s `ALWAYS_DENY` default in
-  particular has never been proven to actually block a real image
-  deploy, only planned.
+  [docs/security.md](security.md)) have now been applied against a real
+  project (`sit`, 2026-08-25). `iap` was verified with a real
+  `gcloud compute ssh --tunnel-through-iap` session; `binary_authorization`
+  was verified by deploying a real unattested test pod to a live GKE
+  cluster and confirming the admission webhook denied it
+  (`imagepolicywebhook.image-policy.k8s.io ... Denied by always_deny
+  admission rule`) — previously only planned, now proven. `workload_identity`
+  was verified only at the IAM-binding level (`gcloud iam
+  service-accounts get-iam-policy` showing the correct
+  `roles/iam.workloadIdentityUser` binding); the full pod-level runtime
+  test (a pod actually fetching a token via the binding) was deliberately
+  skipped rather than temporarily loosening the now-proven
+  `binary_authorization` policy just to exercise a different feature —
+  still an open gap if that full runtime path ever needs proving.

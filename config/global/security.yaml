@@ -113,3 +113,8 @@ rules:
     applies_to: [cloudfunctions]
     severity: WARNING
     description: "Cloud Function has ingress_settings = ALLOW_ALL — confirm this function is meant to be publicly reachable (e.g. a webhook)"
+
+  - id: SEC_CLOUDRUN_PUBLIC_INVOKER
+    applies_to: [cloudrun]
+    severity: WARNING
+    description: "Cloud Run service has allow_unauthenticated = true — confirm this service is meant to be publicly reachable (e.g. one fronted by its own load_balancer)"

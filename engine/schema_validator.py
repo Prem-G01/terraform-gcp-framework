@@ -52,6 +52,20 @@ RESOURCE_RULES: dict[str, dict] = {
     "cloudfunctions": {"required": ["location", "runtime", "entry_point", "source.bucket", "source.object", "service_account.name"]},
     "memorystore": {"required": ["region", "memory_size_gb", "network"]},
     "vpc_service_controls": {"required": ["restricted_services"]},
+    # Found 2026-08-25: iap/workload_identity had no RESOURCE_RULES entry
+    # at all, and both modules access these fields directly with no
+    # lookup()/try() fallback (modules/security/iap/main.tf's
+    # `cfg.target_vm`/`cfg.members`;
+    # modules/security/workload_identity/main.tf's
+    # `each.value.gcp_service_account`/`.k8s_namespace`/
+    # `.k8s_service_account`) — an omitted field would have crashed
+    # `terraform plan` with a raw "Unsupported attribute" error instead of
+    # a clean validation message. `members: []` (present, empty) is a
+    # deliberate, valid state — see docs/security.md "Identity-Aware
+    # Proxy" — and still passes this check; only an entirely absent
+    # `members` key is now caught.
+    "iap": {"required": ["target_vm", "members"]},
+    "workload_identity": {"required": ["gcp_service_account", "k8s_namespace", "k8s_service_account"]},
 }
 
 _RULE_ID = {

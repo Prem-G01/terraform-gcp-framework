@@ -130,6 +130,59 @@ def test_pubsub_dead_letter_topic_typo_is_rejected():
     ), [f.render() for f in findings]
 
 
+def test_iap_missing_target_vm_is_rejected():
+    """Real gap found 2026-08-25: iap had no RESOURCE_RULES entry at all,
+    and modules/security/iap/main.tf accesses cfg.target_vm/cfg.members
+    directly with no fallback — an omitted field would crash
+    terraform plan with a raw "Unsupported attribute" error instead of a
+    clean validation message."""
+
+    class FakeDeployment:
+        def enabled_resource_types(self):
+            return ["iap"]
+
+        def instances(self, rtype):
+            return {"admin-access": {"members": []}}  # target_vm omitted
+
+    findings = schema_validator.validate_required_fields(FakeDeployment())
+    assert any(f.resource == "iap.admin-access" and "target_vm" in f.missing for f in findings), [
+        f.render() for f in findings
+    ]
+
+
+def test_iap_with_empty_members_list_is_not_flagged():
+    """members: [] (present, deliberately empty — "wiring is live, access
+    is closed by default", see docs/security.md) must still pass; only an
+    entirely absent members key should be caught."""
+
+    class FakeDeployment:
+        def enabled_resource_types(self):
+            return ["iap"]
+
+        def instances(self, rtype):
+            return {"admin-access": {"target_vm": "app-vm-01", "members": []}}
+
+    findings = schema_validator.validate_required_fields(FakeDeployment())
+    assert findings == [], [f.render() for f in findings]
+
+
+def test_workload_identity_missing_fields_are_rejected():
+    class FakeDeployment:
+        def enabled_resource_types(self):
+            return ["workload_identity"]
+
+        def instances(self, rtype):
+            return {"app-workload": {"gcp_service_account": "app-workload-sa"}}  # k8s fields omitted
+
+    findings = schema_validator.validate_required_fields(FakeDeployment())
+    assert any(
+        f.resource == "workload_identity.app-workload"
+        and "k8s_namespace" in f.missing
+        and "k8s_service_account" in f.missing
+        for f in findings
+    ), [f.render() for f in findings]
+
+
 def test_cloudrun_no_deletion_protection_is_rejected():
     """Real gap found 2026-08-25: config/global/security.yaml's
     policy.deletion_protection_required_for listed cloudrun, but no check

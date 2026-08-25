@@ -981,7 +981,45 @@ when fixing protection flags mid-teardown, target the apply to only
 the resources still present in state, never run it untargeted against
 a still-fully-enabled config.
 
-## Common issues
+## sit — final teardown attempt on the stuck 4, 2026-08-25 (closed, unresolved)
+
+Follow-up to the entry above, at the user's explicit request to finish
+clearing the last 4 resources (`sit-vpc`, its default route, the PSA
+reserved IP range, and the PSA peering connection). Exhausted every
+avenue available from this side, all failing on the identical
+underlying condition:
+
+1. `terraform destroy` (untargeted, full state) — failed on the PSA
+   connection first, same error as before.
+2. `terraform destroy -target=...` against just the 4 resources —
+   identical failure, confirming it's not an ordering/dependency issue
+   in the config.
+3. `gcloud services vpc-peerings delete --network=sit-vpc
+   --project=prj-dg-devops-test-sit --quiet` directly — bypassing
+   Terraform entirely, calling the same underlying API Terraform calls.
+   Failed with the same reason code, one layer deeper:
+   `FLOW_SN_DC_RESOURCE_PREVENTING_DELETE_CONNECTION`, with a
+   `PreconditionFailure` violation naming an opaque internal subject id
+   (`171113`) that doesn't correspond to anything visible in this
+   project via `gcloud`.
+4. Re-confirmed (again) zero real producers: `gcloud sql instances
+   list` and `gcloud redis instances list --region=asia-south1` both
+   return 0 items in `prj-dg-devops-test-sit`.
+5. `gcloud compute networks peerings list --network=sit-vpc` shows the
+   peering as `ACTIVE`/`Connected`, peered against
+   `x18241c122b1f28e5p-tp` — Google's own internal tenant project that
+   manages the servicenetworking peering, not a customer project we
+   have any visibility or control over.
+
+**Conclusion: this is a genuine GCP backend bug, not a config, IAM, or
+tooling problem on our side.** Every tool available to a project owner
+(Terraform, `gcloud` directly) hits the identical wall. The only paths
+left are a GCP support case citing this exact reason code, or waiting
+and retrying later in case it self-clears. Decided to stop here and
+leave the 4 resources as documented, known, non-costing residue rather
+than keep retrying an approach already proven not to work — a VPC
+network, one route, one reserved /20 IP range, and one peering
+connection carry no compute/data/billing exposure.
 
 **`terraform plan` fails with "Backend initialization required"**
 You changed `backend "gcs" {}` config (or are running for the first time)

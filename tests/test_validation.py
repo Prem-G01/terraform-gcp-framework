@@ -65,6 +65,71 @@ def test_invalid_reference_is_rejected():
     assert any(f.rule == "INVALID_REFERENCE" and f.resource == "vm.test-vm" for f in findings)
 
 
+def test_cloudsql_password_secret_typo_is_rejected():
+    """Real gap found 2026-08-25: cloudsql.users.<user>.password_secret is
+    a genuine instance-key reference into secrets (var.passwords[secret_name]
+    in modules/database/cloudsql/main.tf), but was never checked — a typo
+    would have passed validation cleanly and crashed terraform plan/apply
+    with a raw "Invalid index" error instead."""
+
+    class FakeDeployment:
+        def enabled_resource_types(self):
+            return ["cloudsql", "secrets"]
+
+        def instances(self, rtype):
+            if rtype == "cloudsql":
+                return {"app-sql": {"users": {"root": {"password_secret": "typo-password"}}}}
+            if rtype == "secrets":
+                return {"mysql-root-password": {}}
+            return {}
+
+    findings = dependency_engine.validate_instance_references(FakeDeployment())
+    assert any(
+        f.rule == "INVALID_REFERENCE" and f.resource == "cloudsql.app-sql.users.root" for f in findings
+    ), [f.render() for f in findings]
+
+
+def test_cloudsql_password_secret_valid_reference_passes():
+    class FakeDeployment:
+        def enabled_resource_types(self):
+            return ["cloudsql", "secrets"]
+
+        def instances(self, rtype):
+            if rtype == "cloudsql":
+                return {"app-sql": {"users": {"root": {"password_secret": "mysql-root-password"}}}}
+            if rtype == "secrets":
+                return {"mysql-root-password": {}}
+            return {}
+
+    findings = dependency_engine.validate_instance_references(FakeDeployment())
+    assert findings == [], [f.render() for f in findings]
+
+
+def test_pubsub_dead_letter_topic_typo_is_rejected():
+    """Same class of gap: pubsub's dead_letter_policy.topic self-references
+    another pubsub topic instance (google_pubsub_topic.topic[...] in
+    modules/messaging/pubsub/main.tf) but was never checked either."""
+
+    class FakeDeployment:
+        def enabled_resource_types(self):
+            return ["pubsub"]
+
+        def instances(self, rtype):
+            return {
+                "app-events": {
+                    "subscriptions": {
+                        "app-events-sub": {"dead_letter_policy": {"topic": "typo-topic"}},
+                    }
+                }
+            }
+
+    findings = dependency_engine.validate_instance_references(FakeDeployment())
+    assert any(
+        f.rule == "INVALID_REFERENCE" and f.resource == "pubsub.app-events.subscriptions.app-events-sub"
+        for f in findings
+    ), [f.render() for f in findings]
+
+
 def test_public_ssh_firewall_is_rejected():
     d = load("invalid_public_ssh")
     findings = security_engine.validate_security(d)

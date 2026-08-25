@@ -55,12 +55,37 @@ field naming another instance actually resolves:
 | gke | `node_pool.service_account` | service_accounts |
 | cloudfunctions | `service_account.name` | service_accounts |
 | memorystore | `network` | vpc |
+| iap | `target_vm` | vm |
+| workload_identity | `gcp_service_account` | service_accounts |
 
 A typo here (e.g. `subnet: "app-subnet"` when the real instance key is
 `"app-subnets"`) fails with `INVALID_REFERENCE` and lists what instances
 actually exist under the target type — this is the check that would have
 caught it before Terraform's much less readable
 `The given key does not exist` error at plan time.
+
+### Nested instance references
+
+`INSTANCE_REFERENCES` only expresses one reference per top-level instance
+field. Some real references live inside a *nested* per-instance map
+instead — found missing entirely on 2026-08-25, since neither is caught
+by the table above:
+
+| Source type | Nested collection | Field on each entry | Must name an instance of |
+|---|---|---|---|
+| cloudsql | `users` (keyed by username) | `password_secret` | secrets |
+| pubsub | `subscriptions` (keyed by subscription name) | `dead_letter_policy.topic` | pubsub (another topic) |
+
+`cloudsql.<instance>.users.<user>.password_secret` is a real
+`var.passwords[secret_name]` lookup in
+`modules/database/cloudsql/main.tf`; `pubsub.<instance>.subscriptions
+.<sub>.dead_letter_policy.topic` is a real
+`google_pubsub_topic.topic[...]` self-reference in
+`modules/messaging/pubsub/main.tf`. Both crashed `terraform plan` with a
+raw "Invalid index" error on a typo before this — `engine
+.dependency_engine.NESTED_INSTANCE_REFERENCES` checks them the same way
+`INSTANCE_REFERENCES` checks everything else, just walking one extra
+level of nesting first.
 
 ## What this replaced
 

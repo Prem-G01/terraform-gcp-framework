@@ -110,6 +110,50 @@ def validate_type_dependencies(deployment) -> list[Finding]:
     return findings
 
 
+def _check_reference(deployment, enabled, source_resource, field_path, value, target_type, findings):
+    if target_type not in enabled:
+        findings.append(
+            Finding(
+                severity="ERROR",
+                category="dependency",
+                rule="REFERENCED_RESOURCE_TYPE_DISABLED",
+                resource=source_resource,
+                message=(
+                    f"{field_path} = '{value}' references a {target_type} instance, "
+                    f"but resources.{target_type}.enabled is false."
+                ),
+            )
+        )
+        return
+    target_instances = deployment.instances(target_type)
+    if value not in target_instances:
+        findings.append(
+            Finding(
+                severity="ERROR",
+                category="dependency",
+                rule="INVALID_REFERENCE",
+                resource=source_resource,
+                message=(
+                    f"{field_path} = '{value}' does not match any instance under "
+                    f"resources.{target_type}.instances ({', '.join(sorted(target_instances)) or 'none defined'})."
+                ),
+            )
+        )
+
+
+# (source resource type, nested collection field, field on each collection
+# entry that references an instance, target type it must name an instance
+# of). Separate from INSTANCE_REFERENCES because these references live
+# inside a per-instance nested map (e.g. cloudsql.<instance>.users.<user>
+# .password_secret), not directly on the instance itself — a single
+# dotted path can't express "for every entry in this nested map, check
+# this field."
+NESTED_INSTANCE_REFERENCES: list[tuple[str, str, str, str]] = [
+    ("cloudsql", "users", "password_secret", "secrets"),
+    ("pubsub", "subscriptions", "dead_letter_policy.topic", "pubsub"),
+]
+
+
 def validate_instance_references(deployment) -> list[Finding]:
     findings: list[Finding] = []
     enabled = set(deployment.enabled_resource_types())
@@ -122,32 +166,29 @@ def validate_instance_references(deployment) -> list[Finding]:
                 value = _get_path(instance, field_path)
                 if value in (None, ""):
                     continue  # required-field check in schema_validator handles absence
-                if target_type not in enabled:
-                    findings.append(
-                        Finding(
-                            severity="ERROR",
-                            category="dependency",
-                            rule="REFERENCED_RESOURCE_TYPE_DISABLED",
-                            resource=f"{rtype}.{name}",
-                            message=(
-                                f"{field_path} = '{value}' references a {target_type} instance, "
-                                f"but resources.{target_type}.enabled is false."
-                            ),
-                        )
-                    )
+                _check_reference(deployment, enabled, f"{rtype}.{name}", field_path, value, target_type, findings)
+
+    for rtype, collection_field, ref_field, target_type in NESTED_INSTANCE_REFERENCES:
+        if rtype not in enabled:
+            continue
+        for name, instance in deployment.instances(rtype).items():
+            collection = instance.get(collection_field) if isinstance(instance, dict) else None
+            if not isinstance(collection, dict):
+                continue
+            for entry_key, entry in collection.items():
+                if not isinstance(entry, dict):
                     continue
-                target_instances = deployment.instances(target_type)
-                if value not in target_instances:
-                    findings.append(
-                        Finding(
-                            severity="ERROR",
-                            category="dependency",
-                            rule="INVALID_REFERENCE",
-                            resource=f"{rtype}.{name}",
-                            message=(
-                                f"{field_path} = '{value}' does not match any instance under "
-                                f"resources.{target_type}.instances ({', '.join(sorted(target_instances)) or 'none defined'})."
-                            ),
-                        )
-                    )
+                value = _get_path(entry, ref_field)
+                if value in (None, ""):
+                    continue
+                _check_reference(
+                    deployment,
+                    enabled,
+                    f"{rtype}.{name}.{collection_field}.{entry_key}",
+                    ref_field,
+                    value,
+                    target_type,
+                    findings,
+                )
+
     return findings

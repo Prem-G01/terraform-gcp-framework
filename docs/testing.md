@@ -53,6 +53,8 @@ approved region too.
 | `test_valid_minimal_passes` | a correctly-wired vpc+subnet+service_account+vm fixture has zero errors |
 | `test_vm_without_network_is_rejected` | **the spec's explicit ask**: a VM with no subnet is rejected, naming `subnet`, `service_account.name`, `boot_disk.image` as missing, and flagging the disabled `subnet` dependency |
 | `test_invalid_reference_is_rejected` | a `vm.subnet` field pointing at a nonexistent subnet instance fails `INVALID_REFERENCE` |
+| `test_cloudsql_password_secret_typo_is_rejected` / `..._valid_reference_passes` | `cloudsql.users.<user>.password_secret` — a real `var.passwords[secret_name]` lookup, never checked before — now fails `INVALID_REFERENCE` on a typo and passes cleanly when correct (2026-08-25, see docs/dependencies.md "Nested instance references") |
+| `test_pubsub_dead_letter_topic_typo_is_rejected` | same gap, `pubsub.subscriptions.<sub>.dead_letter_policy.topic` — a real `google_pubsub_topic.topic[...]` self-reference, never checked before |
 | `test_public_ssh_firewall_is_rejected` | a firewall rule opening TCP/22 to 0.0.0.0/0 fails `SEC_PUBLIC_SSH` |
 | `test_dependency_cycle_is_detected` | a synthetic `a requires b, b requires a` graph is caught |
 | `test_real_dependency_graph_has_no_cycles` | the real `config/global/dependencies.yaml` is acyclic |
